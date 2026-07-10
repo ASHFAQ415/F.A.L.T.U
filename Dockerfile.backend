@@ -1,0 +1,46 @@
+# ============================================================
+# Dockerfile.backend  —  Used by Railway (repo-root context)
+# Build context = repo root, so paths use backend/ prefix
+# For local Docker Compose, backend/Dockerfile is used instead
+# ============================================================
+FROM python:3.11-slim
+
+LABEL maintainer="F.A.L.T.U Project"
+LABEL description="F.A.L.T.U Backend — Groq + sentence-transformers (Railway build)"
+
+WORKDIR /app
+
+# ── System dependencies ───────────────────────────────────
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python dependencies (cached layer) ────────────────────
+# Build context is repo root, so reference backend/requirements.txt
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# ── Pre-download ML models at build time ──────────────────
+# Baked into image to avoid slow cold-starts
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2'); print('✅ Embedding model ready')"
+RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2'); print('✅ Reranker model ready')"
+RUN python -m spacy download en_core_web_lg || python -m spacy download en_core_web_sm
+
+# ── Application code ──────────────────────────────────────
+# Copy entire backend/ folder contents into /app
+COPY backend/ .
+
+# ── Data directories ──────────────────────────────────────
+RUN mkdir -p /app/data/uploads /app/data/chroma /app/data/logs
+
+# ── Expose port ───────────────────────────────────────────
+EXPOSE 8000
+
+# ── Health check ──────────────────────────────────────────
+HEALTHCHECK --interval=20s --timeout=10s --start-period=120s --retries=5 \
+    CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
+
+# ── Start command ─────────────────────────────────────────
+CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info
