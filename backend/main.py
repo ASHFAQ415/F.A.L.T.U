@@ -69,6 +69,31 @@ async def scheduled_reingestion():
 
 
 # ── Application Lifespan ──────────────────────────────────
+def wait_for_db(max_retries: int = 15, delay_seconds: int = 2) -> bool:
+    """
+    Wait for the database to be ready and accepting connections.
+    Particularly useful in monorepos/containers where Postgres starts concurrently.
+    """
+    import time
+    from sqlalchemy.exc import OperationalError
+    
+    logger.info("🔍 Checking database connection...")
+    for attempt in range(1, max_retries + 1):
+        try:
+            # Attempt to connect to the database
+            with engine.connect() as conn:
+                logger.info("✅ Database connection established!")
+                return True
+        except (OperationalError, Exception) as e:
+            logger.warning(
+                f"⚠️ Database not ready yet (attempt {attempt}/{max_retries}). "
+                f"Error: {str(e)[:150]}. Retrying in {delay_seconds}s..."
+            )
+            time.sleep(delay_seconds)
+    logger.error("❌ Failed to connect to database after maximum retries.")
+    return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -82,6 +107,10 @@ async def lifespan(app: FastAPI):
     Path(settings.chroma_data_dir).mkdir(parents=True, exist_ok=True)
     if _is_sqlite:
         Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
+
+    # ── Wait for Database to be ready ─────────────────────
+    if not wait_for_db():
+        logger.error("🚨 Database connection failed. Proceeding with table creation, but it may fail...")
 
     # ── Create database tables ────────────────────────────
     logger.info("🗄️  Initializing database tables...")

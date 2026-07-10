@@ -3,6 +3,10 @@ FROM python:3.11-slim
 LABEL maintainer="RAG Chatbot Project"
 LABEL description="Enterprise RAG Chatbot Backend — Groq + sentence-transformers"
 
+# Enable UTF-8 mode for emojis in logs and disable buffering for immediate log output
+ENV PYTHONUTF8=1
+ENV PYTHONUNBUFFERED=1
+
 WORKDIR /app
 
 # ── System dependencies ──────────────────────────────────
