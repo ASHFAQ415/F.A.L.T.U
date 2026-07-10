@@ -23,6 +23,7 @@ aiosqlite==0.20.0              # SQLite driver (local dev fallback)
 # ── Authentication ────────────────────────────────────────
 python-jose[cryptography]==3.3.0   # JWT tokens
 passlib[bcrypt]==1.7.4             # Password hashing
+bcrypt==4.0.1                      # Pin! passlib 1.7.4 breaks with bcrypt >= 4.1 (__about__ removed)
 
 # ── LLM — Groq API (FREE, replaces Ollama) ───────────────
 # Get free API key: https://console.groq.com
