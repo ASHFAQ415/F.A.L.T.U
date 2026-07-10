@@ -31,7 +31,11 @@ from sseclient import SSEClient
 # ─────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────
-BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000").strip().rstrip("/")
+# Auto-add https:// if no scheme provided (common Railway config mistake)
+if BACKEND_URL and not BACKEND_URL.startswith(("http://", "https://")):
+    BACKEND_URL = "https://" + BACKEND_URL
+
 
 # F.A.L.T.U personality — random loading messages
 LOADING_MSGS = [
