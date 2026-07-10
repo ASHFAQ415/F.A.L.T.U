@@ -29,9 +29,6 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 # 2. Cross-encoder reranking model (~170MB)
 RUN python -c "from sentence_transformers import CrossEncoder; CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2'); print('✅ Reranker model ready')"
 
-# 3. spaCy English model (for PII detection)
-RUN python -m spacy download en_core_web_lg || python -m spacy download en_core_web_sm
-
 # ── Application code ─────────────────────────────────────
 COPY . .
 
