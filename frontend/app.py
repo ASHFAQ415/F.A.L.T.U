@@ -1,20 +1,25 @@
 """
-app.py — Streamlit Chat UI
+app.py — F.A.L.T.U Chat UI
 ============================
-The user-facing interface for the Enterprise RAG Chatbot.
+F.A.L.T.U = Fantastically Accurate Language & Thinking Unit
+
+The funniest, most modern enterprise chatbot UI.
+It's called "useless" but it's actually INCREDIBLY useful.
+That's the joke. 
 
 Features:
-  🔐 Login / logout (JWT auth)
+  🤡 Hilarious branding that confuses everyone
   💬 Real-time streaming chat with citations
-  👍/👎 Feedback buttons on each response
-  📄 Document upload panel + delete button
-  📊 Admin stats dashboard (admin only)
-  🕓 Chat session history sidebar with search/filter
-  🌙 Dark mode by default
+  👍/👎 Feedback buttons
+  📄 Document upload + delete
+  📊 Admin dashboard
+  🕓 Chat history sidebar with search
+  🌙 Neon dark mode that slaps
 """
 
 import json
 import os
+import random
 import time
 import uuid
 from typing import Dict, List, Optional
@@ -28,163 +33,371 @@ from sseclient import SSEClient
 # ─────────────────────────────────────────────────────────
 BACKEND_URL = os.getenv("BACKEND_URL", "http://backend:8000")
 
+# F.A.L.T.U personality — random loading messages
+LOADING_MSGS = [
+    "🧠 Pretending to think really hard...",
+    "🔍 Searching documents (and my soul)...",
+    "⚡ Channeling my inner genius...",
+    "🎯 Definitely not making this up...",
+    "📚 Actually reading the documents this time...",
+    "🤔 Consulting my 8-ball backup system...",
+    "🚀 Launching brain cells at full power...",
+    "🎲 Calculating... (source: trust me bro)...",
+    "🦆 Rubber duck debugging your question...",
+    "☕ One moment, LLM needs its coffee...",
+]
+
+EMPTY_STATE_MSGS = [
+    "Waiting for your query... and your love 💝",
+    "Ask me anything! (I might actually know it 😤)",
+    "No documents? Upload something! I'm bored 😴",
+    "Ready to serve! Unlike my previous job 🫡",
+]
+
 # ─────────────────────────────────────────────────────────
 # Page Configuration
 # ─────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Enterprise RAG Chatbot",
-    page_icon="🤖",
+    page_title="F.A.L.T.U — Fantastically Accurate Language & Thinking Unit",
+    page_icon="🤡",
     layout="wide",
     initial_sidebar_state="expanded",
     menu_items={
-        "About": "Enterprise RAG Chatbot — 100% Free & Self-Hosted",
+        "About": "F.A.L.T.U — The AI that's NOT useless (despite the name)",
+        "Get help": "https://github.com",
     },
 )
 
 # ─────────────────────────────────────────────────────────
-# Custom CSS — Dark Mode, Premium Look
+# 🎨 FALTU CSS — Neon Glassmorphism Dark Mode
 # ─────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* ── Import Google Font ── */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
 
-/* ── Base styles ── */
+/* ── Reset & Base ── */
 html, body, [class*="css"] {
-    font-family: 'Inter', sans-serif;
+    font-family: 'Space Grotesk', sans-serif !important;
 }
 
-/* ── Hide default Streamlit elements ── */
+/* ── Hide Streamlit chrome ── */
 #MainMenu { visibility: hidden; }
 footer { visibility: hidden; }
 header { visibility: hidden; }
+[data-testid="stToolbar"] { display: none; }
 
-/* ── App background ── */
+/* ── App Background — Deep space vibe ── */
 .stApp {
-    background: linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%);
+    background: #080810;
+    background-image:
+        radial-gradient(ellipse at 10% 20%, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
+        radial-gradient(ellipse at 90% 80%, rgba(236, 72, 153, 0.12) 0%, transparent 50%),
+        radial-gradient(ellipse at 50% 50%, rgba(6, 182, 212, 0.05) 0%, transparent 70%);
     min-height: 100vh;
 }
 
-/* ── Sidebar styling ── */
+/* ── Sidebar ── */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #0d1117 0%, #161b22 100%);
-    border-right: 1px solid #30363d;
+    background: rgba(10, 10, 20, 0.95) !important;
+    border-right: 1px solid rgba(124, 58, 237, 0.3) !important;
+    backdrop-filter: blur(20px);
+}
+[data-testid="stSidebar"] > div:first-child {
+    background: transparent !important;
 }
 
-/* ── Chat messages ── */
+/* ── FALTU Logo Title ── */
+.faltu-logo {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 2.8rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, #a855f7, #ec4899, #06b6d4, #a855f7);
+    background-size: 300% 300%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: gradientShift 4s ease infinite;
+    letter-spacing: -1px;
+    line-height: 1.1;
+}
+
+.faltu-subtitle {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #6b7280;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    margin-top: 4px;
+}
+
+@keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* ── Neon glow pulse on logo ── */
+@keyframes neonPulse {
+    0%, 100% { text-shadow: 0 0 10px rgba(168, 85, 247, 0.5), 0 0 20px rgba(168, 85, 247, 0.3); }
+    50% { text-shadow: 0 0 20px rgba(168, 85, 247, 0.8), 0 0 40px rgba(168, 85, 247, 0.5); }
+}
+
+/* ── Chat Messages — Glassmorphism cards ── */
 [data-testid="stChatMessage"] {
-    border-radius: 12px;
-    margin-bottom: 8px;
-    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px !important;
+    margin-bottom: 12px !important;
+    backdrop-filter: blur(10px) !important;
+    transition: transform 0.2s ease !important;
+}
+[data-testid="stChatMessage"]:hover {
+    transform: translateY(-1px) !important;
 }
 
-/* ── Input box ── */
+/* User message */
+[data-testid="stChatMessage"][data-testid*="user"],
+div[data-testid="stChatMessage"]:has([aria-label*="user"]) {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(236, 72, 153, 0.1)) !important;
+    border: 1px solid rgba(124, 58, 237, 0.25) !important;
+}
+
+/* Assistant message */
+div[data-testid="stChatMessage"]:not(:has([aria-label*="user"])) {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(124, 58, 237, 0.08)) !important;
+    border: 1px solid rgba(6, 182, 212, 0.2) !important;
+}
+
+/* ── Chat Input ── */
 [data-testid="stChatInputContainer"] {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 12px;
-    padding: 4px;
+    background: rgba(15, 15, 30, 0.9) !important;
+    border: 1px solid rgba(124, 58, 237, 0.4) !important;
+    border-radius: 16px !important;
+    backdrop-filter: blur(20px) !important;
+    transition: border-color 0.3s ease !important;
+}
+[data-testid="stChatInputContainer"]:focus-within {
+    border-color: rgba(168, 85, 247, 0.8) !important;
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.2) !important;
 }
 
-/* ── Buttons ── */
+/* ── Buttons — Neon gradient ── */
 .stButton > button {
-    background: linear-gradient(135deg, #667eea, #764ba2);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-weight: 600;
-    transition: all 0.3s ease;
+    background: linear-gradient(135deg, #7c3aed, #db2777) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    transition: all 0.25s ease !important;
+    letter-spacing: 0.3px !important;
 }
 .stButton > button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 25px rgba(124, 58, 237, 0.5) !important;
+    background: linear-gradient(135deg, #8b5cf6, #ec4899) !important;
+}
+.stButton > button:active {
+    transform: translateY(0px) !important;
+}
+
+/* ── Metrics ── */
+[data-testid="metric-container"] {
+    background: rgba(124, 58, 237, 0.08) !important;
+    border: 1px solid rgba(124, 58, 237, 0.2) !important;
+    border-radius: 14px !important;
+    padding: 16px !important;
+    transition: all 0.3s ease !important;
+}
+[data-testid="metric-container"]:hover {
+    background: rgba(124, 58, 237, 0.15) !important;
+    border-color: rgba(124, 58, 237, 0.4) !important;
+    transform: translateY(-2px) !important;
+}
+
+/* ── Status badges ── */
+.badge-online {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 12px; border-radius: 20px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #34d399; font-size: 12px; font-weight: 600;
+}
+.badge-online::before { content: "●"; animation: blink 1.5s infinite; }
+.badge-offline {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 12px; border-radius: 20px;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: #f87171; font-size: 12px; font-weight: 600;
+}
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* ── Citation box ── */
+.citation-card {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(124, 58, 237, 0.05));
+    border-left: 3px solid #06b6d4;
+    border-radius: 0 10px 10px 0;
+    padding: 10px 14px;
+    margin: 6px 0;
+    font-size: 13px;
+    color: #94a3b8;
+    transition: all 0.2s ease;
+}
+.citation-card:hover {
+    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15), rgba(124, 58, 237, 0.1));
+    border-left-color: #a855f7;
+    color: #cbd5e1;
 }
 
 /* ── Session history item ── */
-.session-item {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 8px 12px;
-    margin-bottom: 6px;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 13px;
-    color: #c9d1d9;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+.sess-btn {
+    background: rgba(255,255,255,0.03) !important;
+    border: 1px solid rgba(124, 58, 237, 0.15) !important;
+    border-radius: 10px !important;
+    color: #94a3b8 !important;
+    font-size: 13px !important;
+    text-align: left !important;
+    transition: all 0.2s ease !important;
 }
-.session-item:hover {
-    background: rgba(102, 126, 234, 0.1);
-    border-color: #667eea;
-}
-.session-item.active {
-    background: rgba(102, 126, 234, 0.15);
-    border-color: #667eea;
-    color: #a5b4fc;
+.sess-btn:hover {
+    background: rgba(124, 58, 237, 0.12) !important;
+    border-color: rgba(124, 58, 237, 0.4) !important;
+    color: #c4b5fd !important;
 }
 
-/* ── Metric cards ── */
-[data-testid="metric-container"] {
-    background: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 12px;
-    padding: 16px;
-}
-
-/* ── Status badge ── */
-.status-badge {
-    display: inline-block;
-    padding: 2px 10px;
-    border-radius: 20px;
-    font-size: 12px;
-    font-weight: 600;
-}
-.status-online { background: #1a4731; color: #34d399; border: 1px solid #34d399; }
-.status-offline { background: #4c1d1d; color: #f87171; border: 1px solid #f87171; }
-
-/* ── Citation box ── */
-.citation-box {
-    background: rgba(102, 126, 234, 0.1);
-    border-left: 3px solid #667eea;
-    border-radius: 0 8px 8px 0;
-    padding: 8px 12px;
-    margin: 4px 0;
-    font-size: 13px;
-    color: #a0aec0;
-}
-
-/* ── Heading gradient ── */
-.gradient-text {
-    background: linear-gradient(135deg, #667eea, #764ba2, #f093fb);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    font-weight: 700;
+/* ── User info card ── */
+.user-card {
+    background: linear-gradient(135deg, rgba(124, 58, 237, 0.12), rgba(236, 72, 153, 0.08));
+    border: 1px solid rgba(124, 58, 237, 0.25);
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 18px;
 }
 
 /* ── Upload area ── */
 [data-testid="stFileUploader"] {
-    background: rgba(255,255,255,0.03);
-    border: 2px dashed #30363d;
-    border-radius: 12px;
-    padding: 20px;
+    background: rgba(124, 58, 237, 0.05) !important;
+    border: 2px dashed rgba(124, 58, 237, 0.3) !important;
+    border-radius: 14px !important;
+    transition: all 0.3s ease !important;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: rgba(124, 58, 237, 0.6) !important;
+    background: rgba(124, 58, 237, 0.1) !important;
 }
 
-/* ── Doc card ── */
+/* ── Doc cards ── */
 .doc-card {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid #30363d;
-    border-radius: 8px;
-    padding: 10px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px;
+    padding: 12px 14px;
     margin-bottom: 8px;
+    transition: all 0.2s ease;
+}
+.doc-card:hover {
+    background: rgba(124, 58, 237, 0.08);
+    border-color: rgba(124, 58, 237, 0.25);
+}
+
+/* ── Divider ── */
+hr {
+    border-color: rgba(124, 58, 237, 0.2) !important;
+    margin: 16px 0 !important;
+}
+
+/* ── Selectbox ── */
+[data-testid="stSelectbox"] > div > div {
+    background: rgba(15, 15, 30, 0.9) !important;
+    border: 1px solid rgba(124, 58, 237, 0.3) !important;
+    border-radius: 10px !important;
+    color: #e2e8f0 !important;
+}
+
+/* ── Text inputs ── */
+[data-testid="stTextInput"] > div > div > input,
+[data-testid="stTextArea"] textarea {
+    background: rgba(15, 15, 30, 0.9) !important;
+    border: 1px solid rgba(124, 58, 237, 0.3) !important;
+    border-radius: 10px !important;
+    color: #e2e8f0 !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+}
+[data-testid="stTextInput"] > div > div > input:focus {
+    border-color: rgba(168, 85, 247, 0.7) !important;
+    box-shadow: 0 0 15px rgba(168, 85, 247, 0.15) !important;
+}
+
+/* ── Expander ── */
+[data-testid="stExpander"] {
+    background: rgba(6, 182, 212, 0.05) !important;
+    border: 1px solid rgba(6, 182, 212, 0.15) !important;
+    border-radius: 12px !important;
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: rgba(0,0,0,0.2); }
+::-webkit-scrollbar-thumb { background: rgba(124, 58, 237, 0.4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(168, 85, 247, 0.6); }
+
+/* ── Floating emoji ── */
+@keyframes float {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    33% { transform: translateY(-8px) rotate(-5deg); }
+    66% { transform: translateY(-4px) rotate(5deg); }
+}
+.floating { animation: float 3s ease-in-out infinite; display: inline-block; }
+
+/* ── Shimmer text ── */
+.shimmer {
+    background: linear-gradient(90deg, #a855f7 0%, #ec4899 25%, #06b6d4 50%, #ec4899 75%, #a855f7 100%);
+    background-size: 400% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 3s ease infinite;
+}
+@keyframes shimmer {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}
+
+/* ── Tag pill ── */
+.tag-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    background: rgba(124, 58, 237, 0.2);
+    border: 1px solid rgba(124, 58, 237, 0.4);
+    color: #c4b5fd;
+    margin: 2px;
+}
+.tag-admin {
+    background: rgba(236, 72, 153, 0.2);
+    border-color: rgba(236, 72, 153, 0.4);
+    color: #f9a8d4;
+}
+
+/* ── Stats card ── */
+.stat-row {
+    display: flex; gap: 8px; margin-bottom: 8px;
+}
+
+/* ── Code font ── */
+code, .mono {
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 12px !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────
-# Session State Initialization
+# Session State Init
 # ─────────────────────────────────────────────────────────
 def init_session():
     defaults = {
@@ -198,21 +411,18 @@ def init_session():
         "history_search": "",
         "active_session_id": None,
     }
-    for key, value in defaults.items():
+    for key, val in defaults.items():
         if key not in st.session_state:
-            st.session_state[key] = value
+            st.session_state[key] = val
 
 
 # ─────────────────────────────────────────────────────────
-# API Helper Functions
+# API Helpers
 # ─────────────────────────────────────────────────────────
 def api_headers() -> Dict:
-    """Return auth headers for API calls."""
     return {"Authorization": f"Bearer {st.session_state.token}"}
 
-
 def api_get(path: str) -> Optional[Dict]:
-    """Make an authenticated GET request to the backend."""
     try:
         r = requests.get(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=10)
         r.raise_for_status()
@@ -220,95 +430,82 @@ def api_get(path: str) -> Optional[Dict]:
     except Exception:
         return None
 
-
 def api_post(path: str, data: Dict = None, files=None) -> Optional[Dict]:
-    """Make an authenticated POST request to the backend."""
     try:
         if files:
-            r = requests.post(
-                f"{BACKEND_URL}{path}",
-                headers=api_headers(),
-                data=data,
-                files=files,
-                timeout=60,
-            )
+            r = requests.post(f"{BACKEND_URL}{path}", headers=api_headers(), data=data, files=files, timeout=60)
         else:
-            r = requests.post(
-                f"{BACKEND_URL}{path}",
-                headers=api_headers(),
-                json=data,
-                timeout=60,
-            )
+            r = requests.post(f"{BACKEND_URL}{path}", headers=api_headers(), json=data, timeout=60)
         r.raise_for_status()
         return r.json()
     except Exception as e:
-        st.error(f"API error: {e}")
+        st.error(f"💀 API said nope: {e}")
         return None
 
-
 def api_delete(path: str) -> bool:
-    """Make an authenticated DELETE request to the backend."""
     try:
         r = requests.delete(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=10)
         r.raise_for_status()
         return True
     except Exception as e:
-        st.error(f"Delete error: {e}")
+        st.error(f"💀 Delete failed (the document is immortal): {e}")
         return False
 
-
 def stream_chat(query: str, session_id: str, corpus: str):
-    """
-    Stream a chat response from the backend via Server-Sent Events.
-    Yields tokens and finally the metadata.
-    """
     url = f"{BACKEND_URL}/v1/chat"
-    payload = {
-        "query": query,
-        "session_id": session_id,
-        "corpus": corpus,
-        "temperature": 0.7,
-        "max_tokens": 512,
-    }
+    payload = {"query": query, "session_id": session_id, "corpus": corpus, "temperature": 0.7, "max_tokens": 512}
     headers = {**api_headers(), "Accept": "text/event-stream"}
-
-    with requests.post(url, json=payload, headers=headers, stream=True, timeout=120) as response:
-        response.raise_for_status()
-        client = SSEClient(response)
+    with requests.post(url, json=payload, headers=headers, stream=True, timeout=120) as resp:
+        resp.raise_for_status()
+        client = SSEClient(resp)
         for event in client.events():
             if event.data == "[DONE]":
                 break
             try:
-                data = json.loads(event.data)
-                yield data
+                yield json.loads(event.data)
             except json.JSONDecodeError:
                 continue
 
 
 # ─────────────────────────────────────────────────────────
-# Login Page
+# 🔐 Login Page
 # ─────────────────────────────────────────────────────────
 def show_login():
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 2.5, 1])
     with col2:
         st.markdown("""
-        <div style='text-align: center; padding: 40px 0 20px 0;'>
-            <div style='font-size: 64px; margin-bottom: 16px;'>🤖</div>
-            <h1 class='gradient-text' style='font-size: 2.5rem; margin: 0;'>Enterprise RAG</h1>
-            <p style='color: #8b949e; font-size: 1.1rem; margin-top: 8px;'>
-                AI-powered knowledge assistant · 100% free · self-hosted
-            </p>
+        <div style='text-align:center; padding: 60px 0 30px 0;'>
+            <div style='font-size: 80px; margin-bottom: 12px;'>
+                <span class='floating'>🤡</span>
+            </div>
+            <div class='faltu-logo'>F.A.L.T.U</div>
+            <div class='faltu-subtitle'>Fantastically Accurate Language & Thinking Unit</div>
+            <div style='margin-top: 16px; color: #6b7280; font-size: 14px; max-width: 400px; margin: 16px auto 0;'>
+                An AI chatbot that's <span style='color:#a855f7; font-weight:600;'>definitely not useless</span> 
+                (despite what the name suggests) 🤷
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        # Fun feature pills
+        st.markdown("""
+        <div style='text-align:center; margin: 20px 0 30px; display:flex; flex-wrap:wrap; justify-content:center; gap:8px;'>
+            <span class='tag-pill'>🔍 RAG Search</span>
+            <span class='tag-pill'>⚡ Groq LLM</span>
+            <span class='tag-pill'>📚 Cites Sources</span>
+            <span class='tag-pill'>🛡️ Guardrails</span>
+            <span class='tag-pill'>💰 $0/month</span>
+            <span class='tag-pill'>🤡 Named FALTU</span>
         </div>
         """, unsafe_allow_html=True)
 
         with st.form("login_form"):
-            st.markdown("### 🔐 Sign In")
-            username = st.text_input("Username", placeholder="Enter your username")
-            password = st.text_input("Password", type="password", placeholder="Enter your password")
-            submitted = st.form_submit_button("Sign In →", use_container_width=True)
+            username = st.text_input("👤 Username", placeholder="Who are you? (No judgment)")
+            password = st.text_input("🔑 Password", type="password", placeholder="The secret handshake")
+            submitted = st.form_submit_button("🚀 Beam Me In", use_container_width=True)
 
             if submitted:
-                with st.spinner("Signing in..."):
+                with st.spinner("🤡 Checking if you're not a robot..."):
                     try:
                         r = requests.post(
                             f"{BACKEND_URL}/auth/login",
@@ -320,62 +517,78 @@ def show_login():
                             st.session_state.authenticated = True
                             st.session_state.token = data["access_token"]
                             st.session_state.user = data["user"]
-                            st.success("✅ Signed in successfully!")
-                            time.sleep(0.5)
+                            st.success("✅ Identity confirmed. You're (probably) human. Welcome!")
+                            time.sleep(0.8)
                             st.rerun()
                         else:
-                            st.error("❌ Invalid username or password.")
+                            st.error("❌ Wrong credentials. Did you try 'password123'? Yeah, that's why we don't use that.")
                     except Exception as e:
-                        st.error(f"⚠️ Cannot connect to backend. Make sure all services are running.\n\n`{e}`")
+                        st.error(f"⚠️ Backend is having an existential crisis.\n\n`{e}`")
 
         st.markdown("""
-        <div style='text-align: center; color: #6e7681; font-size: 13px; margin-top: 20px;'>
-            🔒 Secured with JWT authentication &nbsp;·&nbsp; 
-            🏠 All data stays on your server &nbsp;·&nbsp; 
-            💰 Zero cost
+        <div style='text-align:center; color:#4b5563; font-size:12px; margin-top:20px; line-height:2;'>
+            🔒 JWT Auth &nbsp;·&nbsp; 🏠 Self-Hosted &nbsp;·&nbsp; 💸 Free Forever &nbsp;·&nbsp; 🤡 Proudly Useless
         </div>
         """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────
-# Sidebar — Navigation + Chat History
+# 🗂️ Sidebar
 # ─────────────────────────────────────────────────────────
 def show_sidebar():
     with st.sidebar:
-        # ── User Info ──────────────────────────────────────
+        # Logo
+        st.markdown("""
+        <div style='padding: 8px 0 4px; text-align:center;'>
+            <div class='faltu-logo' style='font-size:1.8rem;'>🤡 F.A.L.T.U</div>
+            <div style='font-size:10px; color:#6b7280; letter-spacing:2px; margin-top:2px;'>
+                NOT USELESS SINCE 2024
+            </div>
+        </div>
+        <hr/>
+        """, unsafe_allow_html=True)
+
+        # User card
         user = st.session_state.user
+        perms = user.get("permissions", "public")
+        admin_badge = '<span class="tag-pill tag-admin">👑 Admin</span>' if user.get("is_admin") else '<span class="tag-pill">👤 User</span>'
         st.markdown(f"""
-        <div style='padding: 12px; background: rgba(255,255,255,0.05); border-radius: 10px; margin-bottom: 16px;'>
-            <div style='font-weight: 600; color: #e6edf3;'>👤 {user['username']}</div>
-            <div style='font-size: 12px; color: #8b949e;'>{user['email']}</div>
-            {'<span class="status-badge" style="background:#1a2940;color:#667eea;border:1px solid #667eea;font-size:11px;">Admin</span>' if user.get('is_admin') else ''}
+        <div class='user-card'>
+            <div style='font-weight:600; color:#e2e8f0; font-size:15px;'>@{user['username']}</div>
+            <div style='font-size:12px; color:#6b7280; margin: 3px 0 8px;'>{user.get('email','')}</div>
+            {admin_badge}
         </div>
         """, unsafe_allow_html=True)
 
-        # ── Navigation ─────────────────────────────────────
-        st.markdown("### 🗺️ Navigation")
-        if st.button("💬 Chat", use_container_width=True):
-            st.session_state.page = "chat"
-        if st.button("📄 Upload Documents", use_container_width=True):
-            st.session_state.page = "upload"
+        # Navigation
+        st.markdown("**🗺️ Navigate**")
+        col_a, col_b = st.columns(2)
+        with col_a:
+            if st.button("💬 Chat", use_container_width=True):
+                st.session_state.page = "chat"
+                st.rerun()
+        with col_b:
+            if st.button("📄 Docs", use_container_width=True):
+                st.session_state.page = "upload"
+                st.rerun()
+
         if user.get("is_admin"):
             if st.button("📊 Admin Dashboard", use_container_width=True):
                 st.session_state.page = "admin"
+                st.rerun()
 
         st.divider()
 
-        # ── Corpus Selector ────────────────────────────────
-        st.markdown("### 🗂️ Knowledge Base")
-        permissions = user.get("permissions", ["public"])
-        if isinstance(permissions, str):
-            permissions = [p.strip() for p in permissions.split(",")]
-        selected_corpus = st.selectbox("Search in:", options=permissions, index=0)
-        st.session_state.corpus = selected_corpus
+        # Knowledge base selector
+        st.markdown("**🗂️ Knowledge Base**")
+        perms_list = [p.strip() for p in perms.split(",")] if isinstance(perms, str) else perms
+        selected = st.selectbox("Search in:", options=perms_list, index=0, label_visibility="collapsed")
+        st.session_state.corpus = selected
 
         st.divider()
 
-        # ── New Chat ───────────────────────────────────────
-        if st.button("➕ New Chat", use_container_width=True):
+        # New chat
+        if st.button("➕ Fresh Conversation", use_container_width=True):
             st.session_state.messages = []
             st.session_state.session_id = str(uuid.uuid4())
             st.session_state.active_session_id = None
@@ -383,100 +596,79 @@ def show_sidebar():
 
         st.divider()
 
-        # ── Chat History with Search ───────────────────────
-        st.markdown("### 🕓 Chat History")
-        search_query = st.text_input(
-            "🔍 Search sessions",
+        # Chat history with search
+        st.markdown("**🕓 Chat History**")
+        search = st.text_input(
+            "Search",
+            placeholder="🔍 Filter chats...",
             value=st.session_state.history_search,
-            placeholder="Filter by topic...",
-            key="history_search_input",
             label_visibility="collapsed",
+            key="hist_search",
         )
-        st.session_state.history_search = search_query
+        st.session_state.history_search = search
 
-        sessions = api_get("/v1/sessions?limit=50")
+        sessions = api_get("/v1/sessions?limit=50") or []
+        if search.strip():
+            sessions = [s for s in sessions if search.lower() in (s.get("title") or "").lower()]
+
         if sessions:
-            # Filter by search query
-            if search_query.strip():
-                q = search_query.strip().lower()
-                sessions = [s for s in sessions if q in (s.get("title") or "").lower()]
-
-            if sessions:
-                for sess in sessions[:20]:
-                    title = sess.get("title") or "Untitled Chat"
-                    sess_id = sess.get("session_id")
-                    is_active = sess_id == st.session_state.active_session_id
-                    icon = "💬" if not is_active else "▶️"
-
-                    if st.button(
-                        f"{icon} {title[:35]}{'…' if len(title) > 35 else ''}",
-                        key=f"sess_{sess_id}",
-                        use_container_width=True,
-                        help=f"Restore session: {title}",
-                    ):
-                        _restore_session(sess_id)
-            else:
-                st.caption("No sessions match your search.")
+            for sess in sessions[:20]:
+                title = sess.get("title") or "Untitled Chat"
+                sid = sess.get("session_id")
+                is_active = sid == st.session_state.active_session_id
+                prefix = "▶️" if is_active else "💬"
+                label = f"{prefix} {title[:30]}{'…' if len(title)>30 else ''}"
+                if st.button(label, key=f"sess_{sid}", use_container_width=True, help=title):
+                    _restore_session(sid)
         else:
-            st.caption("No previous chats yet.")
+            st.markdown("<div style='color:#4b5563; font-size:12px; text-align:center; padding:8px;'>No chats yet. Say hello! 👋</div>", unsafe_allow_html=True)
 
         st.divider()
 
-        # ── System Status ──────────────────────────────────
-        st.markdown("### 🟢 System Status")
-        health = api_get("/health")
-        if health:
-            groq_ok = health.get("groq_available", health.get("ollama_available", False))
-            chroma_ok = health.get("chroma_available", False)
-            db_ok = health.get("database_available", False)
-            st.markdown(
-                f"Groq LLM: {'<span class=\"status-badge status-online\">Online</span>' if groq_ok else '<span class=\"status-badge status-offline\">Offline</span>'}",
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f"ChromaDB: {'<span class=\"status-badge status-online\">Online</span>' if chroma_ok else '<span class=\"status-badge status-offline\">Offline</span>'}",
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f"Database: {'<span class=\"status-badge status-online\">Online</span>' if db_ok else '<span class=\"status-badge status-offline\">Offline</span>'}",
-                unsafe_allow_html=True,
-            )
-            st.caption(f"Model: `{health.get('model', 'llama-3.1-8b-instant')}`")
-        else:
-            st.warning("⚠️ Backend unreachable")
+        # Status
+        st.markdown("**🟢 System Status**")
+        health = api_get("/health") or {}
+        groq_ok = health.get("groq_available", health.get("ollama_available", False))
+        chroma_ok = health.get("chroma_available", False)
+        db_ok = health.get("database_available", True)
+
+        def badge(ok, label):
+            cls = "badge-online" if ok else "badge-offline"
+            return f'<span class="{cls}">{label}</span>'
+
+        st.markdown(f"""
+        <div style='display:flex; flex-direction:column; gap:6px; margin-bottom:8px;'>
+            {badge(groq_ok, "🚀 Groq LLM")}
+            {badge(chroma_ok, "🔮 ChromaDB")}
+            {badge(db_ok, "🐘 Database")}
+        </div>
+        <div style='font-size:11px; color:#4b5563; font-family: "JetBrains Mono", monospace;'>
+            model: {health.get('model','llama-3.1-8b-instant')}
+        </div>
+        """, unsafe_allow_html=True)
 
         st.divider()
 
-        # ── Logout ─────────────────────────────────────────
-        if st.button("🚪 Sign Out", use_container_width=True):
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
+        if st.button("🚪 Escape Pod (Logout)", use_container_width=True):
+            for k in list(st.session_state.keys()):
+                del st.session_state[k]
             st.rerun()
 
 
 def _restore_session(session_id: str):
-    """Load a previous chat session from the backend into the current view."""
-    messages_data = api_get(f"/v1/sessions/{session_id}/messages")
-    if messages_data is None:
-        st.error("Could not load session.")
+    data = api_get(f"/v1/sessions/{session_id}/messages")
+    if not data:
+        st.error("🔍 Session not found. It probably ran away.")
         return
-
     restored = []
-    for msg in messages_data:
-        entry = {
-            "role": msg["role"],
-            "content": msg["content"],
-            "message_id": msg.get("id"),
-            "sources": [],
-        }
-        # Parse sources JSON string if present
+    for msg in data:
+        entry = {"role": msg["role"], "content": msg["content"], "message_id": msg.get("id"), "sources": []}
         if msg.get("sources"):
             try:
                 entry["sources"] = json.loads(msg["sources"])
-            except (json.JSONDecodeError, TypeError):
+            except Exception:
                 pass
         restored.append(entry)
-
     st.session_state.messages = restored
     st.session_state.session_id = session_id
     st.session_state.active_session_id = session_id
@@ -485,56 +677,84 @@ def _restore_session(session_id: str):
 
 
 # ─────────────────────────────────────────────────────────
-# Chat Page
+# 💬 Chat Page
 # ─────────────────────────────────────────────────────────
 def show_chat():
+    # Header
     st.markdown("""
-    <h1 style='margin-bottom: 4px;'>
-        🤖 <span class='gradient-text'>Enterprise RAG Chatbot</span>
-    </h1>
-    <p style='color: #8b949e; margin-top: 0;'>
-        Ask me anything about your documents. I cite my sources.
-    </p>
+    <div style='margin-bottom: 24px;'>
+        <h1 style='margin:0; font-family:"Space Grotesk",sans-serif; font-size:2.2rem; font-weight:700;'>
+            <span class='shimmer'>F.A.L.T.U</span>
+            <span style='color:#374151; font-size:1.2rem; font-weight:400; margin-left:8px;'>/ chat</span>
+        </h1>
+        <p style='color:#6b7280; margin:4px 0 0; font-size:14px;'>
+            Ask anything about your docs. I cite sources. I'm <em>basically</em> a genius. 🧠
+        </p>
+    </div>
     """, unsafe_allow_html=True)
 
-    # ── Display chat history ────────────────────────────────
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"], avatar="🧑" if msg["role"] == "user" else "🤖"):
-            st.markdown(msg["content"])
+    # Empty state
+    if not st.session_state.messages:
+        corpus = st.session_state.corpus
+        st.markdown(f"""
+        <div style='text-align:center; padding: 60px 20px; color:#374151;'>
+            <div style='font-size:64px; margin-bottom:16px;'>
+                <span class='floating'>🤡</span>
+            </div>
+            <div style='font-size:18px; font-weight:600; color:#6b7280; margin-bottom:8px;'>
+                {random.choice(EMPTY_STATE_MSGS)}
+            </div>
+            <div style='font-size:13px; color:#4b5563;'>
+                Searching in: <span style='color:#a855f7; font-weight:600;'>{corpus}</span> knowledge base
+            </div>
+            <div style='margin-top:30px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;'>
+                <div style='background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:12px 16px;font-size:13px;color:#94a3b8;max-width:200px;cursor:pointer;'>
+                    💡 "Summarize the main points"
+                </div>
+                <div style='background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:12px 16px;font-size:13px;color:#94a3b8;max-width:200px;'>
+                    🔍 "What does the policy say about X?"
+                </div>
+                <div style='background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:12px 16px;font-size:13px;color:#94a3b8;max-width:200px;'>
+                    📊 "Compare these two documents"
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
+    # Chat history
+    for msg in st.session_state.messages:
+        avatar = "🧑" if msg["role"] == "user" else "🤡"
+        with st.chat_message(msg["role"], avatar=avatar):
+            st.markdown(msg["content"])
             if msg["role"] == "assistant" and msg.get("sources"):
-                with st.expander("📚 View Sources", expanded=False):
-                    for source in msg["sources"]:
+                with st.expander(f"📚 Sources ({len(msg['sources'])} found)", expanded=False):
+                    for src in msg["sources"]:
                         st.markdown(f"""
-                        <div class='citation-box'>
-                            <strong>[{source['number']}] {source['source']}</strong><br/>
-                            <em>{source['preview']}</em>
+                        <div class='citation-card'>
+                            <strong style='color:#67e8f9;'>[{src['number']}] {src['source']}</strong><br/>
+                            <span style='font-size:12px;'>{src['preview']}</span>
                         </div>
                         """, unsafe_allow_html=True)
-
-            # Feedback buttons
             if msg["role"] == "assistant" and msg.get("message_id"):
-                col_f1, col_f2, col_space = st.columns([1, 1, 10])
-                with col_f1:
+                c1, c2, _ = st.columns([1, 1, 12])
+                with c1:
                     if st.button("👍", key=f"up_{msg['message_id']}"):
                         api_post(f"/v1/feedback?message_id={msg['message_id']}&rating=1")
-                        st.toast("Thanks for the feedback! 🎉")
-                with col_f2:
-                    if st.button("👎", key=f"down_{msg['message_id']}"):
+                        st.toast("❤️ Noted! Teaching FALTU to be less useless.")
+                with c2:
+                    if st.button("👎", key=f"dn_{msg['message_id']}"):
                         api_post(f"/v1/feedback?message_id={msg['message_id']}&rating=-1")
-                        st.toast("Thanks! We'll use this to improve.")
+                        st.toast("😤 Got it. FALTU will try harder... maybe.")
 
-    # ── Chat Input ─────────────────────────────────────────
+    # Chat input
     corpus = st.session_state.corpus
-    if query := st.chat_input(f"Ask about '{corpus}' documents..."):
-        # Add user message
+    if query := st.chat_input(f"Ask F.A.L.T.U about '{corpus}' docs... 🤡"):
         st.session_state.messages.append({"role": "user", "content": query})
         with st.chat_message("user", avatar="🧑"):
             st.markdown(query)
 
-        # Stream response
-        with st.chat_message("assistant", avatar="🤖"):
-            response_placeholder = st.empty()
+        with st.chat_message("assistant", avatar="🤡"):
+            placeholder = st.empty()
             full_response = ""
             sources = []
             message_id = None
@@ -542,65 +762,55 @@ def show_chat():
             from_cache = False
 
             try:
-                with st.spinner("🔍 Searching knowledge base..."):
-                    first_token = True
+                loading_msg = random.choice(LOADING_MSGS)
+                placeholder.markdown(f"*{loading_msg}*")
 
                 for event in stream_chat(query, st.session_state.session_id, corpus):
-                    event_type = event.get("type")
-
-                    if event_type == "token":
-                        if first_token:
-                            first_token = False
+                    etype = event.get("type")
+                    if etype == "token":
                         full_response += event.get("content", "")
-                        response_placeholder.markdown(full_response + "▌")
-
-                    elif event_type == "metadata":
+                        placeholder.markdown(full_response + "▌")
+                    elif etype == "metadata":
                         sources = event.get("sources", [])
                         message_id = event.get("message_id")
                         latency_ms = event.get("latency_ms")
                         from_cache = event.get("from_cache", False)
-                        # Update active session for history highlighting
                         if event.get("session_id"):
                             st.session_state.active_session_id = event["session_id"]
+                    elif etype == "error":
+                        full_response = event.get("content", "Something exploded 💥")
 
-                    elif event_type == "error":
-                        full_response = event.get("content", "An error occurred.")
+                placeholder.markdown(full_response)
 
-                response_placeholder.markdown(full_response)
-
-                # Show sources
                 if sources:
-                    with st.expander("📚 View Sources", expanded=False):
-                        for source in sources:
+                    with st.expander(f"📚 Sources ({len(sources)} found)", expanded=False):
+                        for src in sources:
                             st.markdown(f"""
-                            <div class='citation-box'>
-                                <strong>[{source['number']}] {source['source']}</strong><br/>
-                                <em>{source['preview']}</em>
+                            <div class='citation-card'>
+                                <strong style='color:#67e8f9;'>[{src['number']}] {src['source']}</strong><br/>
+                                <span style='font-size:12px;'>{src['preview']}</span>
                             </div>
                             """, unsafe_allow_html=True)
 
-                # Show latency info
                 if latency_ms:
-                    cache_badge = " ⚡ cached" if from_cache else ""
-                    st.caption(f"⏱️ Response time: {latency_ms}ms{cache_badge}")
+                    cache_txt = " ⚡ *from cache*" if from_cache else ""
+                    st.caption(f"⏱️ {latency_ms}ms{cache_txt} · Powered by F.A.L.T.U™")
 
-                # Feedback
                 if message_id:
-                    col_f1, col_f2, col_space = st.columns([1, 1, 10])
-                    with col_f1:
+                    c1, c2, _ = st.columns([1, 1, 12])
+                    with c1:
                         if st.button("👍", key=f"up_{message_id}"):
                             api_post(f"/v1/feedback?message_id={message_id}&rating=1")
-                            st.toast("Thanks! 🎉")
-                    with col_f2:
-                        if st.button("👎", key=f"down_{message_id}"):
+                            st.toast("❤️ Teaching FALTU to be less useless!")
+                    with c2:
+                        if st.button("👎", key=f"dn_{message_id}"):
                             api_post(f"/v1/feedback?message_id={message_id}&rating=-1")
-                            st.toast("Thanks for the feedback!")
+                            st.toast("😤 FALTU will train harder. Or cry. TBD.")
 
             except Exception as e:
-                full_response = f"⚠️ Error: {str(e)}\n\nMake sure the backend is running and Groq API key is configured."
-                response_placeholder.markdown(full_response)
+                full_response = f"💀 FALTU has crashed spectacularly:\n\n`{str(e)}`\n\nCheck that the backend is running and Groq API key is set."
+                placeholder.markdown(full_response)
 
-        # Save to session state
         st.session_state.messages.append({
             "role": "assistant",
             "content": full_response,
@@ -610,153 +820,142 @@ def show_chat():
 
 
 # ─────────────────────────────────────────────────────────
-# Document Upload Page
+# 📄 Upload Page
 # ─────────────────────────────────────────────────────────
 def show_upload():
     st.markdown("""
-    <h1 class='gradient-text'>📄 Document Upload</h1>
-    <p style='color: #8b949e;'>Upload PDF, Word, Markdown, or text files to the knowledge base.</p>
+    <h1 style='font-family:"Space Grotesk",sans-serif; font-weight:700; margin-bottom:4px;'>
+        📄 <span class='shimmer'>Feed the Beast</span>
+    </h1>
+    <p style='color:#6b7280; font-size:14px; margin-bottom:24px;'>
+        Upload documents so F.A.L.T.U has something to talk about (other than nonsense).
+    </p>
     """, unsafe_allow_html=True)
 
     col1, col2 = st.columns([3, 2])
 
     with col1:
-        st.markdown("### 📤 Upload New Document")
-        uploaded_file = st.file_uploader(
-            "Choose a file",
+        st.markdown("### 📤 Upload Document")
+        uploaded = st.file_uploader(
+            "Drop it like it's hot 🔥",
             type=["pdf", "docx", "md", "txt"],
-            help="Supported formats: PDF, Word (.docx), Markdown (.md), Plain text (.txt)",
+            help="PDF, Word, Markdown, or TXT. Max 50MB. FALTU will devour it.",
         )
-
-        if uploaded_file:
-            corpus = st.selectbox(
-                "Add to knowledge base:",
-                options=st.session_state.user.get("permissions", ["public"]),
-            )
-            required_permissions = st.text_input(
-                "Who can access this document?",
-                value=corpus,
-                help="Comma-separated, e.g. 'public' or 'engineering,admin'",
-            )
-
-            if st.button("📥 Upload & Ingest", use_container_width=True):
-                with st.spinner(f"Uploading {uploaded_file.name}..."):
+        if uploaded:
+            user_perms = st.session_state.user.get("permissions", "public")
+            perms_list = [p.strip() for p in user_perms.split(",")] if isinstance(user_perms, str) else user_perms
+            corpus = st.selectbox("Add to knowledge base:", options=perms_list)
+            req_perms = st.text_input("Who can access?", value=corpus, help="e.g. 'public' or 'engineering,admin'")
+            if st.button("🚀 Upload & Unleash FALTU", use_container_width=True):
+                with st.spinner(f"🤡 FALTU is devouring {uploaded.name}..."):
                     result = api_post(
                         "/v1/ingest",
-                        data={"corpus": corpus, "required_permissions": required_permissions},
-                        files={"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)},
+                        data={"corpus": corpus, "required_permissions": req_perms},
+                        files={"file": (uploaded.name, uploaded.getvalue(), uploaded.type)},
                     )
                     if result:
-                        st.success(f"✅ {result.get('message', 'Document uploaded!')}")
-                        st.info(f"Document ID: `{result.get('document_id')}` · Status: `{result.get('status')}`")
+                        st.success(f"✅ {result.get('message','Uploaded!')} ID: `{result.get('document_id')}`")
                         st.rerun()
 
     with col2:
-        st.markdown("### 📚 Knowledge Base")
-        docs = api_get("/v1/documents")
+        st.markdown("### 📚 Document Library")
+        docs = api_get("/v1/documents") or []
         if docs:
             for doc in docs[:30]:
-                status_icon = {"ready": "✅", "pending": "⏳", "processing": "🔄", "error": "❌"}.get(doc["status"], "❓")
-                col_doc, col_del = st.columns([9, 1])
-                with col_doc:
+                icons = {"ready": "✅", "pending": "⏳", "processing": "🔄", "error": "💀"}
+                icon = icons.get(doc["status"], "❓")
+                c_doc, c_del = st.columns([10, 1])
+                with c_doc:
                     st.markdown(f"""
                     <div class='doc-card'>
-                        <strong>{status_icon} {doc['original_filename']}</strong><br/>
-                        <small style='color: #8b949e;'>
-                            Corpus: {doc['corpus']} ·
-                            Chunks: {doc['chunk_count']} ·
-                            {round(doc['file_size_bytes'] / 1024, 1)} KB
-                        </small>
+                        <div style='font-weight:600; color:#e2e8f0; font-size:13px;'>{icon} {doc['original_filename']}</div>
+                        <div style='font-size:11px; color:#6b7280; margin-top:4px;'>
+                            <span class='tag-pill'>{doc['corpus']}</span>
+                            &nbsp;{doc['chunk_count']} chunks · {round(doc['file_size_bytes']/1024,1)} KB
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
-                with col_del:
-                    # Show delete button — admins always, others only for their own uploads
+                with c_del:
                     user = st.session_state.user
                     can_delete = user.get("is_admin") or doc.get("uploaded_by") == user.get("id")
                     if can_delete:
-                        if st.button("🗑️", key=f"del_doc_{doc['id']}", help=f"Delete {doc['original_filename']}"):
+                        if st.button("🗑️", key=f"ddoc_{doc['id']}", help="Delete document"):
                             if api_delete(f"/v1/documents/{doc['id']}"):
-                                st.success(f"Deleted '{doc['original_filename']}'")
+                                st.success(f"🗑️ Deleted! It's gone. Forever. No take-backs.")
                                 st.rerun()
         else:
-            st.info("📭 No documents ingested yet. Upload your first document!")
+            st.markdown("""
+            <div style='text-align:center; padding:40px; color:#4b5563;'>
+                <div style='font-size:48px; margin-bottom:12px;'>📭</div>
+                <div style='font-size:14px;'>No documents yet.</div>
+                <div style='font-size:12px; margin-top:4px;'>FALTU is hungry. Feed it.</div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # ─────────────────────────────────────────────────────────
-# Admin Dashboard Page
+# 📊 Admin Dashboard
 # ─────────────────────────────────────────────────────────
 def show_admin():
     st.markdown("""
-    <h1 class='gradient-text'>📊 Admin Dashboard</h1>
-    <p style='color: #8b949e;'>System overview and user management.</p>
+    <h1 style='font-family:"Space Grotesk",sans-serif; font-weight:700; margin-bottom:4px;'>
+        📊 <span class='shimmer'>Command Center</span>
+    </h1>
+    <p style='color:#6b7280; font-size:14px; margin-bottom:24px;'>
+        You're the boss. F.A.L.T.U answers to you. (Mostly.)
+    </p>
     """, unsafe_allow_html=True)
 
-    stats = api_get("/admin/stats")
-    if stats:
-        col1, col2, col3, col4 = st.columns(4)
-        with col1:
-            st.metric("👥 Total Users", stats.get("total_users", 0))
-        with col2:
-            st.metric("📄 Documents", stats.get("total_documents", 0))
-        with col3:
-            st.metric("💬 Messages", stats.get("total_messages", 0))
-        with col4:
-            st.metric("👍 Feedback Rate", f"{stats.get('positive_feedback_rate_pct', 0)}%")
-
-        st.metric("⚡ Avg Response Time", f"{stats.get('avg_response_latency_ms', 0)}ms")
+    stats = api_get("/admin/stats") or {}
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1: st.metric("👥 Users", stats.get("total_users", 0))
+    with c2: st.metric("📄 Documents", stats.get("total_documents", 0))
+    with c3: st.metric("💬 Messages", stats.get("total_messages", 0))
+    with c4: st.metric("👍 Positive FB", f"{stats.get('positive_feedback_rate_pct', 0)}%")
+    with c5: st.metric("⚡ Avg Latency", f"{stats.get('avg_response_latency_ms', 0)}ms")
 
     st.divider()
     st.markdown("### 👥 User Management")
 
-    # Create user form
-    with st.expander("➕ Create New User"):
-        with st.form("create_user"):
-            col1, col2 = st.columns(2)
-            with col1:
-                new_username = st.text_input("Username")
-                new_email = st.text_input("Email")
-                new_password = st.text_input("Password", type="password")
-            with col2:
-                new_fullname = st.text_input("Full Name (optional)")
-                new_permissions = st.text_input("Permissions", value="public",
-                                                 help="Comma-separated: public,engineering,hr")
-                new_is_admin = st.checkbox("Is Admin?")
-
-            if st.form_submit_button("Create User", use_container_width=True):
-                result = api_post("/admin/users", {
-                    "username": new_username,
-                    "email": new_email,
-                    "password": new_password,
-                    "full_name": new_fullname,
-                    "permissions": new_permissions,
-                    "is_admin": new_is_admin,
-                })
+    with st.expander("➕ Create New User (Invite someone into the cult)"):
+        with st.form("create_user_form"):
+            c1, c2 = st.columns(2)
+            with c1:
+                nu = st.text_input("Username")
+                ne = st.text_input("Email")
+                np_ = st.text_input("Password", type="password")
+            with c2:
+                nf = st.text_input("Full Name (optional)")
+                npr = st.text_input("Permissions", value="public", help="public,engineering,hr,finance")
+                na = st.checkbox("Admin? (With great power...)")
+            if st.form_submit_button("🎉 Create User", use_container_width=True):
+                result = api_post("/admin/users", {"username": nu, "email": ne, "password": np_, "full_name": nf, "permissions": npr, "is_admin": na})
                 if result:
-                    st.success(f"✅ User '{new_username}' created!")
+                    st.success(f"✅ @{nu} is now part of the F.A.L.T.U family. They can never leave.")
                     st.rerun()
 
-    # User list
-    users = api_get("/admin/users")
-    if users:
-        for user in users:
-            with st.container():
-                col1, col2, col3 = st.columns([3, 2, 1])
-                with col1:
-                    st.markdown(f"**{user['username']}** — {user['email']}")
-                with col2:
-                    st.caption(f"Permissions: {user['permissions']}")
-                with col3:
-                    if user["id"] != st.session_state.user["id"]:
-                        if st.button("🗑️", key=f"del_{user['id']}", help="Delete user"):
-                            requests.delete(
-                                f"{BACKEND_URL}/admin/users/{user['id']}",
-                                headers=api_headers(),
-                            )
-                            st.rerun()
+    users = api_get("/admin/users") or []
+    for user in users:
+        with st.container():
+            cu1, cu2, cu3 = st.columns([3, 3, 1])
+            with cu1:
+                admin_tag = ' <span class="tag-pill tag-admin">👑 Admin</span>' if user.get("is_admin") else ""
+                st.markdown(f"**@{user['username']}** {admin_tag}", unsafe_allow_html=True)
+                st.caption(user["email"])
+            with cu2:
+                perms = user.get("permissions", "public")
+                for p in perms.split(","):
+                    st.markdown(f'<span class="tag-pill">{p.strip()}</span>', unsafe_allow_html=True)
+            with cu3:
+                if user["id"] != st.session_state.user["id"]:
+                    if st.button("🗑️", key=f"duser_{user['id']}", help="Delete user"):
+                        requests.delete(f"{BACKEND_URL}/admin/users/{user['id']}", headers=api_headers())
+                        st.rerun()
+        st.divider()
 
 
 # ─────────────────────────────────────────────────────────
-# Main App
+# Main
 # ─────────────────────────────────────────────────────────
 def main():
     init_session()
@@ -768,15 +967,13 @@ def main():
     show_sidebar()
 
     page = st.session_state.page
-    if page == "chat":
-        show_chat()
-    elif page == "upload":
+    if page == "upload":
         show_upload()
     elif page == "admin":
         if st.session_state.user.get("is_admin"):
             show_admin()
         else:
-            st.error("🚫 You don't have admin access.")
+            st.error("🚫 Admin only zone. Nice try though. 👀")
     else:
         show_chat()
 

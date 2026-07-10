@@ -131,28 +131,31 @@ async def lifespan(app: FastAPI):
 
 # ── FastAPI App ───────────────────────────────────────────
 app = FastAPI(
-    title="Enterprise RAG Chatbot API",
+    title="F.A.L.T.U — Fantastically Accurate Language & Thinking Unit",
     description="""
-## 🤖 Enterprise RAG Chatbot — 100% Free Self-Hosted Stack
+## 🤡 F.A.L.T.U — The AI That's NOT Useless (Despite the Name)
 
 A production-grade **Retrieval-Augmented Generation (RAG)** chatbot deployed on Railway.
-No subscriptions for the LLM. No API bills. Runs in the cloud for free.
+Free. Fast. Funny name. Serious results.
+
+### What does F.A.L.T.U stand for?
+> **F**antastically **A**ccurate **L**anguage & **T**hinking **U**nit
 
 ### Stack
 - **LLM**: Groq API (LLaMA 3.1 8B — free tier, blazing fast)
-- **Embeddings**: sentence-transformers all-MiniLM-L6-v2 (runs on Railway CPU)
+- **Embeddings**: sentence-transformers all-MiniLM-L6-v2 (Railway CPU)
 - **Vector DB**: ChromaDB (Railway persistent volume)
 - **Database**: PostgreSQL (Railway managed)
 - **Hosting**: Railway free tier
 
 ### Features
-- 📄 Ingest PDF, DOCX, Markdown, and TXT files
+- 📄 Ingest PDF, DOCX, Markdown, TXT files
 - 🔍 Hybrid retrieval (vector + BM25 keyword)
-- 🎯 Cross-encoder reranking for better accuracy
-- 💬 Real-time streaming responses (SSE)
-- 🔒 JWT authentication with role-based access
-- 🛡️ Input/output guardrails + PII redaction
-- 📊 Prometheus metrics + Grafana dashboards
+- 🎯 Cross-encoder reranking
+- 💬 Real-time streaming (SSE)
+- 🔒 JWT auth + role-based access
+- 🛡️ Guardrails + PII redaction
+- 📊 Prometheus metrics
     """,
     version="2.0.0",
     contact={

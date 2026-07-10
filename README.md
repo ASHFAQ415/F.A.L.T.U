@@ -1,7 +1,9 @@
-# 🤖 Enterprise RAG Chatbot
+# 🤡 F.A.L.T.U
 
-> **AI-powered knowledge assistant — fully free, deployed in minutes on Railway.**
-> Upload your documents, ask questions, get cited answers. No API bill. No complexity.
+> **F**antastically **A**ccurate **L**anguage & **T**hinking **U**nit
+>
+> *An AI chatbot that's definitely NOT useless (despite the name).*
+> Upload your docs, ask questions, get cited answers — free, fast, and funny.
 
 [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template)
 
@@ -349,5 +351,9 @@ MIT License — see [LICENSE](../LICENSE) for details.
 ---
 
 <div align="center">
-  Built with ❤️ using FastAPI · Streamlit · Groq · ChromaDB · Railway
+  Built with ❤️ and questionable naming decisions using FastAPI · Streamlit · Groq · ChromaDB · Railway
+  <br/><br/>
+  <strong>F.A.L.T.U</strong> — Fantastically Accurate Language & Thinking Unit
+  <br/>
+  <em>(Yes, we know what "faltu" means. That's the joke.)</em>
 </div>
