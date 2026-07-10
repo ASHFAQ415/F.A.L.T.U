@@ -32,8 +32,7 @@ httpx==0.27.0
 # Replaces: Ollama nomic-embed-text (no server needed)
 # Model: all-MiniLM-L6-v2 (~80MB, 384-dim, very fast)
 sentence-transformers==3.0.1
-torch==2.3.1+cpu               # CPU-only build (smaller, faster to install)
---extra-index-url https://download.pytorch.org/whl/cpu
+torch
 
 # ── Vector Database ───────────────────────────────────────
 chromadb==0.5.3                # On-disk vector DB with Railway volume
