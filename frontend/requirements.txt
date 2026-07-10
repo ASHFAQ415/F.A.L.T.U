@@ -1,5 +1,4 @@
 # Frontend Dependencies
 streamlit==1.36.0
-httpx==0.27.0          # Async HTTP client to talk to FastAPI
-requests==2.32.3       # Sync HTTP for some Streamlit components
-sseclient-py==1.8.0    # Server-Sent Events client for streaming
+requests==2.32.3          # Sync HTTP to talk to FastAPI backend
+sseclient-py==1.8.0       # Server-Sent Events client for streaming responses

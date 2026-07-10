@@ -2,68 +2,72 @@
 routers/health.py — Health Check Endpoint
 ==========================================
 GET /health → System status check
-Verifies Ollama, ChromaDB, and SQLite are reachable.
-Used by Docker healthchecks and monitoring dashboards.
+Verifies Groq API, ChromaDB, and PostgreSQL/SQLite are reachable.
+Used by Railway healthchecks and monitoring dashboards.
 """
 
-import httpx
 from fastapi import APIRouter
 from sqlmodel import Session, text
 
 from config import get_settings
 from main import engine
-from models import HealthResponse
 
 router = APIRouter()
 settings = get_settings()
 
 
-@router.get("/health", response_model=HealthResponse, tags=["System"])
+@router.get("/health", tags=["System"])
 async def health_check():
     """
     System health check.
-    
-    Checks connectivity to:
-    - Ollama (LLM service)
-    - ChromaDB (vector database)
-    - SQLite (metadata database)
-    
-    Returns 200 OK if all healthy, 503 if any service is down.
-    """
-    ollama_ok = False
-    chroma_ok = False
 
-    # ── Check Ollama ──────────────────────────────────────
+    Checks connectivity to:
+    - Groq API (LLM service)
+    - ChromaDB (vector database)
+    - PostgreSQL/SQLite (metadata database)
+
+    Returns 200 OK always — individual service statuses are in the response body.
+    """
+    groq_ok = False
+    chroma_ok = False
+    db_ok = False
+
+    # ── Check Groq API ────────────────────────────────────
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(f"{settings.ollama_base_url}/api/tags")
-            ollama_ok = response.status_code == 200
+        from services.llm_client import GroqClient
+        client = GroqClient()
+        groq_ok = await client.is_available()
     except Exception:
-        ollama_ok = False
+        groq_ok = False
 
     # ── Check ChromaDB ────────────────────────────────────
     try:
         import chromadb
-        client = chromadb.PersistentClient(path=f"{settings.data_dir}/chroma")
+        client = chromadb.PersistentClient(path=settings.chroma_data_dir)
         client.heartbeat()
         chroma_ok = True
     except Exception:
         chroma_ok = False
 
-    # ── Check SQLite ──────────────────────────────────────
-    sqlite_ok = False
+    # ── Check Database ────────────────────────────────────
     try:
         with Session(engine) as session:
             session.exec(text("SELECT 1"))
-            sqlite_ok = True
+            db_ok = True
     except Exception:
-        sqlite_ok = False
+        db_ok = False
 
-    overall_status = "healthy" if (ollama_ok and chroma_ok and sqlite_ok) else "degraded"
+    db_type = "postgresql" if settings.database_url else "sqlite"
+    overall_status = "healthy" if (groq_ok and chroma_ok and db_ok) else "degraded"
 
-    return HealthResponse(
-        status=overall_status,
-        ollama_available=ollama_ok,
-        chroma_available=chroma_ok,
-        model=settings.ollama_model,
-    )
+    return {
+        "status": overall_status,
+        "groq_available": groq_ok,
+        "chroma_available": chroma_ok,
+        "database_available": db_ok,
+        "database_type": db_type,
+        # Keep backward-compat fields for the frontend
+        "ollama_available": groq_ok,
+        "model": settings.groq_model,
+        "version": "2.0.0",
+    }

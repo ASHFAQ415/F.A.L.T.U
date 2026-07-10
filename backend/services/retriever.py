@@ -17,7 +17,7 @@ import structlog
 from rank_bm25 import BM25Okapi
 
 from config import get_settings
-from services.embedder import OllamaEmbedder
+from services.embedder import SentenceTransformerEmbedder as OllamaEmbedder
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -32,9 +32,9 @@ class HybridRetriever:
     """
 
     def __init__(self):
-        # ChromaDB persistent client (stores vectors on disk)
+        # ChromaDB persistent client (stores vectors on Railway volume or local disk)
         self._chroma_client = chromadb.PersistentClient(
-            path=f"{settings.data_dir}/chroma"
+            path=settings.chroma_data_dir
         )
         self._embedder = OllamaEmbedder()
         # Cache of BM25 indexes per corpus (rebuilt on new document ingestion)

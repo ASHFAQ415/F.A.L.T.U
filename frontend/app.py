@@ -7,9 +7,9 @@ Features:
   🔐 Login / logout (JWT auth)
   💬 Real-time streaming chat with citations
   👍/👎 Feedback buttons on each response
-  📄 Document upload panel (admin/authorized users)
+  📄 Document upload panel + delete button
   📊 Admin stats dashboard (admin only)
-  🕓 Chat session history sidebar
+  🕓 Chat session history sidebar with search/filter
   🌙 Dark mode by default
 """
 
@@ -78,16 +78,6 @@ header { visibility: hidden; }
     border: 1px solid rgba(255,255,255,0.05);
 }
 
-/* ── User message ── */
-[data-testid="stChatMessage"][data-testid*="user"] {
-    background: linear-gradient(135deg, #1e3a5f, #1a2940);
-}
-
-/* ── Assistant message ── */
-[data-testid="stChatMessage"]:not([data-testid*="user"]) {
-    background: linear-gradient(135deg, #1a1a2e, #0f0f1a);
-}
-
 /* ── Input box ── */
 [data-testid="stChatInputContainer"] {
     background: #161b22;
@@ -108,6 +98,31 @@ header { visibility: hidden; }
 .stButton > button:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* ── Session history item ── */
+.session-item {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 13px;
+    color: #c9d1d9;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.session-item:hover {
+    background: rgba(102, 126, 234, 0.1);
+    border-color: #667eea;
+}
+.session-item.active {
+    background: rgba(102, 126, 234, 0.15);
+    border-color: #667eea;
+    color: #a5b4fc;
 }
 
 /* ── Metric cards ── */
@@ -155,6 +170,15 @@ header { visibility: hidden; }
     border-radius: 12px;
     padding: 20px;
 }
+
+/* ── Doc card ── */
+.doc-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 8px;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -171,6 +195,8 @@ def init_session():
         "session_id": str(uuid.uuid4()),
         "corpus": "public",
         "page": "chat",
+        "history_search": "",
+        "active_session_id": None,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -191,7 +217,7 @@ def api_get(path: str) -> Optional[Dict]:
         r = requests.get(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=10)
         r.raise_for_status()
         return r.json()
-    except Exception as e:
+    except Exception:
         return None
 
 
@@ -218,6 +244,17 @@ def api_post(path: str, data: Dict = None, files=None) -> Optional[Dict]:
     except Exception as e:
         st.error(f"API error: {e}")
         return None
+
+
+def api_delete(path: str) -> bool:
+    """Make an authenticated DELETE request to the backend."""
+    try:
+        r = requests.delete(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=10)
+        r.raise_for_status()
+        return True
+    except Exception as e:
+        st.error(f"Delete error: {e}")
+        return False
 
 
 def stream_chat(query: str, session_id: str, corpus: str):
@@ -301,7 +338,7 @@ def show_login():
 
 
 # ─────────────────────────────────────────────────────────
-# Sidebar
+# Sidebar — Navigation + Chat History
 # ─────────────────────────────────────────────────────────
 def show_sidebar():
     with st.sidebar:
@@ -330,11 +367,9 @@ def show_sidebar():
         # ── Corpus Selector ────────────────────────────────
         st.markdown("### 🗂️ Knowledge Base")
         permissions = user.get("permissions", ["public"])
-        selected_corpus = st.selectbox(
-            "Search in:",
-            options=permissions,
-            index=0,
-        )
+        if isinstance(permissions, str):
+            permissions = [p.strip() for p in permissions.split(",")]
+        selected_corpus = st.selectbox("Search in:", options=permissions, index=0)
         st.session_state.corpus = selected_corpus
 
         st.divider()
@@ -343,7 +378,47 @@ def show_sidebar():
         if st.button("➕ New Chat", use_container_width=True):
             st.session_state.messages = []
             st.session_state.session_id = str(uuid.uuid4())
+            st.session_state.active_session_id = None
             st.rerun()
+
+        st.divider()
+
+        # ── Chat History with Search ───────────────────────
+        st.markdown("### 🕓 Chat History")
+        search_query = st.text_input(
+            "🔍 Search sessions",
+            value=st.session_state.history_search,
+            placeholder="Filter by topic...",
+            key="history_search_input",
+            label_visibility="collapsed",
+        )
+        st.session_state.history_search = search_query
+
+        sessions = api_get("/v1/sessions?limit=50")
+        if sessions:
+            # Filter by search query
+            if search_query.strip():
+                q = search_query.strip().lower()
+                sessions = [s for s in sessions if q in (s.get("title") or "").lower()]
+
+            if sessions:
+                for sess in sessions[:20]:
+                    title = sess.get("title") or "Untitled Chat"
+                    sess_id = sess.get("session_id")
+                    is_active = sess_id == st.session_state.active_session_id
+                    icon = "💬" if not is_active else "▶️"
+
+                    if st.button(
+                        f"{icon} {title[:35]}{'…' if len(title) > 35 else ''}",
+                        key=f"sess_{sess_id}",
+                        use_container_width=True,
+                        help=f"Restore session: {title}",
+                    ):
+                        _restore_session(sess_id)
+            else:
+                st.caption("No sessions match your search.")
+        else:
+            st.caption("No previous chats yet.")
 
         st.divider()
 
@@ -351,17 +426,22 @@ def show_sidebar():
         st.markdown("### 🟢 System Status")
         health = api_get("/health")
         if health:
-            ollama_ok = health.get("ollama_available", False)
+            groq_ok = health.get("groq_available", health.get("ollama_available", False))
             chroma_ok = health.get("chroma_available", False)
+            db_ok = health.get("database_available", False)
             st.markdown(
-                f"Ollama LLM: {'<span class=\"status-badge status-online\">Online</span>' if ollama_ok else '<span class=\"status-badge status-offline\">Offline</span>'}",
+                f"Groq LLM: {'<span class=\"status-badge status-online\">Online</span>' if groq_ok else '<span class=\"status-badge status-offline\">Offline</span>'}",
                 unsafe_allow_html=True,
             )
             st.markdown(
                 f"ChromaDB: {'<span class=\"status-badge status-online\">Online</span>' if chroma_ok else '<span class=\"status-badge status-offline\">Offline</span>'}",
                 unsafe_allow_html=True,
             )
-            st.caption(f"Model: `{health.get('model', 'unknown')}`")
+            st.markdown(
+                f"Database: {'<span class=\"status-badge status-online\">Online</span>' if db_ok else '<span class=\"status-badge status-offline\">Offline</span>'}",
+                unsafe_allow_html=True,
+            )
+            st.caption(f"Model: `{health.get('model', 'llama-3.1-8b-instant')}`")
         else:
             st.warning("⚠️ Backend unreachable")
 
@@ -372,6 +452,36 @@ def show_sidebar():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+
+
+def _restore_session(session_id: str):
+    """Load a previous chat session from the backend into the current view."""
+    messages_data = api_get(f"/v1/sessions/{session_id}/messages")
+    if messages_data is None:
+        st.error("Could not load session.")
+        return
+
+    restored = []
+    for msg in messages_data:
+        entry = {
+            "role": msg["role"],
+            "content": msg["content"],
+            "message_id": msg.get("id"),
+            "sources": [],
+        }
+        # Parse sources JSON string if present
+        if msg.get("sources"):
+            try:
+                entry["sources"] = json.loads(msg["sources"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        restored.append(entry)
+
+    st.session_state.messages = restored
+    st.session_state.session_id = session_id
+    st.session_state.active_session_id = session_id
+    st.session_state.page = "chat"
+    st.rerun()
 
 
 # ─────────────────────────────────────────────────────────
@@ -429,6 +539,7 @@ def show_chat():
             sources = []
             message_id = None
             latency_ms = None
+            from_cache = False
 
             try:
                 with st.spinner("🔍 Searching knowledge base..."):
@@ -448,6 +559,9 @@ def show_chat():
                         message_id = event.get("message_id")
                         latency_ms = event.get("latency_ms")
                         from_cache = event.get("from_cache", False)
+                        # Update active session for history highlighting
+                        if event.get("session_id"):
+                            st.session_state.active_session_id = event["session_id"]
 
                     elif event_type == "error":
                         full_response = event.get("content", "An error occurred.")
@@ -467,7 +581,7 @@ def show_chat():
 
                 # Show latency info
                 if latency_ms:
-                    cache_badge = " ⚡ cached" if event.get("from_cache") else ""
+                    cache_badge = " ⚡ cached" if from_cache else ""
                     st.caption(f"⏱️ Response time: {latency_ms}ms{cache_badge}")
 
                 # Feedback
@@ -483,7 +597,7 @@ def show_chat():
                             st.toast("Thanks for the feedback!")
 
             except Exception as e:
-                full_response = f"⚠️ Error: {str(e)}\n\nMake sure the backend is running and Ollama has finished loading the model."
+                full_response = f"⚠️ Error: {str(e)}\n\nMake sure the backend is running and Groq API key is configured."
                 response_placeholder.markdown(full_response)
 
         # Save to session state
@@ -535,24 +649,35 @@ def show_upload():
                     if result:
                         st.success(f"✅ {result.get('message', 'Document uploaded!')}")
                         st.info(f"Document ID: `{result.get('document_id')}` · Status: `{result.get('status')}`")
+                        st.rerun()
 
     with col2:
         st.markdown("### 📚 Knowledge Base")
         docs = api_get("/v1/documents")
         if docs:
-            for doc in docs[:20]:
+            for doc in docs[:30]:
                 status_icon = {"ready": "✅", "pending": "⏳", "processing": "🔄", "error": "❌"}.get(doc["status"], "❓")
-                st.markdown(f"""
-                <div style='background: rgba(255,255,255,0.03); border: 1px solid #30363d; 
-                     border-radius: 8px; padding: 10px; margin-bottom: 8px;'>
-                    <strong>{status_icon} {doc['original_filename']}</strong><br/>
-                    <small style='color: #8b949e;'>
-                        Corpus: {doc['corpus']} · 
-                        Chunks: {doc['chunk_count']} · 
-                        {round(doc['file_size_bytes'] / 1024, 1)} KB
-                    </small>
-                </div>
-                """, unsafe_allow_html=True)
+                col_doc, col_del = st.columns([9, 1])
+                with col_doc:
+                    st.markdown(f"""
+                    <div class='doc-card'>
+                        <strong>{status_icon} {doc['original_filename']}</strong><br/>
+                        <small style='color: #8b949e;'>
+                            Corpus: {doc['corpus']} ·
+                            Chunks: {doc['chunk_count']} ·
+                            {round(doc['file_size_bytes'] / 1024, 1)} KB
+                        </small>
+                    </div>
+                    """, unsafe_allow_html=True)
+                with col_del:
+                    # Show delete button — admins always, others only for their own uploads
+                    user = st.session_state.user
+                    can_delete = user.get("is_admin") or doc.get("uploaded_by") == user.get("id")
+                    if can_delete:
+                        if st.button("🗑️", key=f"del_doc_{doc['id']}", help=f"Delete {doc['original_filename']}"):
+                            if api_delete(f"/v1/documents/{doc['id']}"):
+                                st.success(f"Deleted '{doc['original_filename']}'")
+                                st.rerun()
         else:
             st.info("📭 No documents ingested yet. Upload your first document!")
 

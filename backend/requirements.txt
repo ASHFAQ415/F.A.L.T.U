@@ -1,5 +1,6 @@
 # ============================================================
-#  Backend Dependencies — All Open Source, All Free
+#  Backend Dependencies — Railway Production Build
+#  All open source. LLM via Groq free API. No Ollama needed.
 # ============================================================
 
 # ── Web Framework ─────────────────────────────────────────
@@ -11,24 +12,34 @@ python-multipart==0.0.9        # File uploads
 pydantic==2.7.1
 pydantic-settings==2.3.0
 
-# ── Database (SQLite ORM) ─────────────────────────────────
+# ── Database ──────────────────────────────────────────────
 sqlmodel==0.0.19               # SQLModel = SQLAlchemy + Pydantic
-aiosqlite==0.20.0              # Async SQLite driver
+psycopg2-binary==2.9.9         # PostgreSQL driver (Railway managed DB)
+aiosqlite==0.20.0              # SQLite driver (local dev fallback)
 
 # ── Authentication ────────────────────────────────────────
 python-jose[cryptography]==3.3.0   # JWT tokens
 passlib[bcrypt]==1.7.4             # Password hashing
 
-# ── HTTP Client (async — for Ollama calls) ────────────────
+# ── LLM — Groq API (FREE, replaces Ollama) ───────────────
+# Get free API key: https://console.groq.com
+groq==0.9.0                    # Official Groq Python SDK
+
+# ── HTTP Client ────────────────────────────────────────────
 httpx==0.27.0
 
-# ── Vector Database ───────────────────────────────────────
-chromadb==0.5.3                # On-disk vector DB (completely free)
+# ── Embeddings — sentence-transformers (runs on CPU) ──────
+# Replaces: Ollama nomic-embed-text (no server needed)
+# Model: all-MiniLM-L6-v2 (~80MB, 384-dim, very fast)
+sentence-transformers==3.0.1
+torch==2.3.1+cpu               # CPU-only build (smaller, faster to install)
+--extra-index-url https://download.pytorch.org/whl/cpu
 
-# ── Reranking (local, no API needed) ─────────────────────
-sentence-transformers==3.0.1   # Cross-encoder reranking
-torch==2.3.1                   # Required by sentence-transformers
-                               # (CPU-only on Oracle Cloud free tier)
+# ── Vector Database ───────────────────────────────────────
+chromadb==0.5.3                # On-disk vector DB with Railway volume
+
+# ── Reranking (local cross-encoder) ───────────────────────
+# sentence-transformers already installed above (shared dependency)
 
 # ── Document Parsing ──────────────────────────────────────
 pymupdf==1.24.5                # PDF text extraction (fast, reliable)
@@ -39,9 +50,9 @@ markdown==3.6                  # Markdown processing
 rank-bm25==0.2.2
 
 # ── Caching ───────────────────────────────────────────────
-cachetools==5.3.3              # In-memory TTL cache (replaces Redis)
+cachetools==5.3.3              # In-memory TTL cache
 
-# ── Scheduling (replaces AWS Lambda + EventBridge) ────────
+# ── Scheduling ────────────────────────────────────────────
 apscheduler==3.10.4            # Background scheduled jobs
 
 # ── Monitoring / Metrics ──────────────────────────────────

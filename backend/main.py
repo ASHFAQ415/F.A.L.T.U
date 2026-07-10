@@ -2,8 +2,8 @@
 main.py — FastAPI Application Entry Point
 ==========================================
 This is the heart of the backend. It:
-  - Creates the FastAPI app with metadata (great for resume!)
-  - Sets up SQLite database tables on startup
+  - Creates the FastAPI app with metadata
+  - Sets up database tables on startup (PostgreSQL on Railway, SQLite locally)
   - Creates the admin user on first run
   - Registers all routers (chat, ingest, health, admin, auth)
   - Exposes Prometheus metrics at /metrics
@@ -35,13 +35,18 @@ structlog.configure(
 )
 logger = structlog.get_logger()
 
-# ── SQLite Engine ─────────────────────────────────────────
-# connect_args: needed for SQLite to work with FastAPI's thread pool
+# ── Database Engine ───────────────────────────────────────
+# Uses PostgreSQL on Railway (via DATABASE_URL), SQLite locally
+_db_url = settings.effective_db_url
+_is_sqlite = _db_url.startswith("sqlite")
+
 engine = create_engine(
-    f"sqlite:///{settings.sqlite_db_path}",
-    connect_args={"check_same_thread": False},
+    _db_url,
+    connect_args={"check_same_thread": False} if _is_sqlite else {},
     echo=False,
 )
+
+logger.info(f"🗄️  Database: {'SQLite (local dev)' if _is_sqlite else 'PostgreSQL (Railway)'}")
 
 
 def get_session():
@@ -74,10 +79,12 @@ async def lifespan(app: FastAPI):
     # ── Ensure data directories exist ────────────────────
     Path(settings.data_dir).mkdir(parents=True, exist_ok=True)
     Path(settings.uploads_dir).mkdir(parents=True, exist_ok=True)
-    Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(settings.chroma_data_dir).mkdir(parents=True, exist_ok=True)
+    if _is_sqlite:
+        Path(settings.sqlite_db_path).parent.mkdir(parents=True, exist_ok=True)
 
     # ── Create database tables ────────────────────────────
-    logger.info("🗄️  Initializing SQLite database...")
+    logger.info("🗄️  Initializing database tables...")
     SQLModel.metadata.create_all(engine)
 
     # ── Create admin user on first run ────────────────────
@@ -111,8 +118,8 @@ async def lifespan(app: FastAPI):
     logger.info("⏰ Background scheduler started (daily re-ingestion at 2 AM)")
 
     logger.info("🚀 RAG Chatbot Backend is ready!")
-    logger.info(f"   LLM Model: {settings.ollama_model}")
-    logger.info(f"   Embed Model: {settings.ollama_embed_model}")
+    logger.info(f"   LLM: Groq API ({settings.groq_model})")
+    logger.info(f"   Embeddings: sentence-transformers (all-MiniLM-L6-v2)")
     logger.info(f"   Data Dir: {settings.data_dir}")
 
     yield  # ← Application runs here
@@ -128,16 +135,15 @@ app = FastAPI(
     description="""
 ## 🤖 Enterprise RAG Chatbot — 100% Free Self-Hosted Stack
 
-A production-grade **Retrieval-Augmented Generation (RAG)** chatbot that runs
-entirely on free, open-source software. No subscriptions, no API bills.
+A production-grade **Retrieval-Augmented Generation (RAG)** chatbot deployed on Railway.
+No subscriptions for the LLM. No API bills. Runs in the cloud for free.
 
 ### Stack
-- **LLM**: Ollama (Llama 3.1 8B — runs locally)
-- **Embeddings**: Ollama nomic-embed-text (runs locally)
-- **Vector DB**: ChromaDB (on-disk)
-- **Reranking**: Cross-encoder (sentence-transformers)
-- **Database**: SQLite
-- **Hosting**: Oracle Cloud Always Free
+- **LLM**: Groq API (LLaMA 3.1 8B — free tier, blazing fast)
+- **Embeddings**: sentence-transformers all-MiniLM-L6-v2 (runs on Railway CPU)
+- **Vector DB**: ChromaDB (Railway persistent volume)
+- **Database**: PostgreSQL (Railway managed)
+- **Hosting**: Railway free tier
 
 ### Features
 - 📄 Ingest PDF, DOCX, Markdown, and TXT files
@@ -148,7 +154,7 @@ entirely on free, open-source software. No subscriptions, no API bills.
 - 🛡️ Input/output guardrails + PII redaction
 - 📊 Prometheus metrics + Grafana dashboards
     """,
-    version="1.0.0",
+    version="2.0.0",
     contact={
         "name": "RAG Chatbot",
         "url": "https://github.com/your-repo/rag-chatbot",
@@ -163,7 +169,7 @@ entirely on free, open-source software. No subscriptions, no API bills.
 # ── CORS — Allow Streamlit frontend to talk to FastAPI ────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],        # In production, replace * with your domain
+    allow_origins=["*"],        # In production, set to your Railway frontend URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -189,5 +195,5 @@ async def root():
         "message": "🤖 Enterprise RAG Chatbot API",
         "docs": "/docs",
         "health": "/health",
-        "version": "1.0.0",
+        "version": "2.0.0",
     }

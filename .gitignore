@@ -1,74 +1,67 @@
-# ============================================================
-#  Enterprise RAG Chatbot — Local Development Environment
-#  Copy this to .env and fill in your values.
-#  NEVER commit .env to Git — it contains secrets!
-# ============================================================
+# ─────────────────────────────────────────
+# Secrets — NEVER commit these
+# ─────────────────────────────────────────
+.env
+*.key
+*.pem
+*.cert
 
 # ─────────────────────────────────────────
-# Security — CHANGE BEFORE DEPLOYING
-# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+# Python
 # ─────────────────────────────────────────
-JWT_SECRET_KEY=CHANGE_ME_generate_a_random_256_bit_key_here
-JWT_ALGORITHM=HS256
-JWT_EXPIRY_HOURS=24
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.env.local
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # ─────────────────────────────────────────
-# Admin User (created on first startup)
+# Data — persistent volumes (local dev)
 # ─────────────────────────────────────────
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=CHANGE_ME_strong_password_here
-ADMIN_EMAIL=admin@example.com
+data/
+*.db
+*.sqlite
+*.sqlite3
+uploads/
 
 # ─────────────────────────────────────────
-# Groq API — FREE LLM (replaces Ollama)
-# Sign up at: https://console.groq.com (free, no credit card)
+# IDE
 # ─────────────────────────────────────────
-GROQ_API_KEY=your-groq-api-key-here
-GROQ_MODEL=llama-3.1-8b-instant
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
 
 # ─────────────────────────────────────────
-# Database
-# For Railway: DATABASE_URL is auto-injected by the PostgreSQL plugin
-# For local: leave empty to use SQLite
+# Docker
 # ─────────────────────────────────────────
-DATABASE_URL=
-DATA_DIR=/app/data
-CHROMA_DATA_DIR=/app/data/chroma
+.dockerignore
 
 # ─────────────────────────────────────────
-# ChromaDB
+# Logs
 # ─────────────────────────────────────────
-CHROMA_COLLECTION_PREFIX=rag
+*.log
+logs/
 
 # ─────────────────────────────────────────
-# RAG Settings
+# Monitoring data (local only)
 # ─────────────────────────────────────────
-RETRIEVAL_TOP_K=20
-RERANK_TOP_K=5
-CHUNK_SIZE=400
-CHUNK_OVERLAP=60
-CACHE_SIMILARITY_THRESHOLD=0.92
-CACHE_TTL_SECONDS=3600
+monitoring/grafana/data/
+monitoring/prometheus/data/
 
 # ─────────────────────────────────────────
-# Rate Limiting
+# ML model cache (sentence-transformers downloads here)
 # ─────────────────────────────────────────
-RATE_LIMIT_PER_MINUTE=20
-
-# ─────────────────────────────────────────
-# Logging
-# ─────────────────────────────────────────
-LOG_LEVEL=INFO
-
-# ─────────────────────────────────────────
-# Feature Flags
-# ─────────────────────────────────────────
-ENABLE_SEMANTIC_CACHE=true
-ENABLE_OUTPUT_FILTERING=true
-ENABLE_PII_REDACTION=true
-ENABLE_RERANKING=true
-
-# ─────────────────────────────────────────
-# Grafana (local monitoring only)
-# ─────────────────────────────────────────
-GRAFANA_PASSWORD=admin
+.cache/

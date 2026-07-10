@@ -1,17 +1,21 @@
 """
-services/llm_client.py — Ollama LLM Client
-============================================
-Communicates with the locally-running Ollama server.
+services/llm_client.py — Groq LLM Client
+==========================================
+Communicates with the Groq API for ultra-fast LLM inference.
 Streams tokens back to the caller via an async generator.
 
-No API key needed. No subscription. Runs on your own hardware.
+Groq API is FREE:
+  - 14,400 requests/day on free tier
+  - Model: llama-3.1-8b-instant (fastest)
+  - No credit card required to sign up
+
+Get your free API key at: https://console.groq.com
 """
 
-import json
 from typing import AsyncGenerator
 
-import httpx
 import structlog
+from groq import AsyncGroq
 
 from config import get_settings
 
@@ -19,16 +23,20 @@ settings = get_settings()
 logger = structlog.get_logger()
 
 
-class OllamaClient:
+class GroqClient:
     """
-    Async streaming client for Ollama.
-    Converts Ollama's NDJSON stream into individual tokens.
+    Async streaming client for Groq API.
+    Drop-in replacement for OllamaClient — same interface, much faster responses.
+
+    Free tier limits (as of 2024):
+      - 14,400 requests/day
+      - 6,000 tokens/minute
+      - 30 requests/minute
     """
 
     def __init__(self):
-        self.base_url = settings.ollama_base_url
-        self.model = settings.ollama_model
-        self.timeout = settings.ollama_timeout
+        self.client = AsyncGroq(api_key=settings.groq_api_key)
+        self.model = settings.groq_model
 
     async def stream_chat(
         self,
@@ -38,79 +46,67 @@ class OllamaClient:
         max_tokens: int = 512,
     ) -> AsyncGenerator[str, None]:
         """
-        Stream a chat response from Ollama token by token.
-        
+        Stream a chat response from Groq token by token.
+
         Args:
             query: The user's question
             system_prompt: Context + instructions for the model
             temperature: Creativity (0 = focused, 1 = creative)
             max_tokens: Maximum tokens to generate
-        
+
         Yields:
             Individual text tokens as they're generated
         """
-        payload = {
-            "model": self.model,
-            "messages": [
+        logger.info(
+            "🚀 Streaming from Groq",
+            model=self.model,
+            tokens=max_tokens,
+        )
+
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": query},
             ],
-            "stream": True,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-            },
-        }
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
 
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream(
-                "POST",
-                f"{self.base_url}/api/chat",
-                json=payload,
-            ) as response:
-                response.raise_for_status()
-
-                async for line in response.aiter_lines():
-                    if not line.strip():
-                        continue
-                    try:
-                        data = json.loads(line)
-                        if data.get("done"):
-                            break
-                        token = data.get("message", {}).get("content", "")
-                        if token:
-                            yield token
-                    except json.JSONDecodeError:
-                        continue
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
 
     async def generate(self, prompt: str, temperature: float = 0.3) -> str:
         """
         Non-streaming generation — for internal use (e.g., query rewriting).
         Returns the complete response as a string.
         """
-        payload = {
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-            "options": {"temperature": temperature},
-        }
-
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/api/generate",
-                json=payload,
-            )
-            response.raise_for_status()
-            return response.json().get("response", "")
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=temperature,
+            max_tokens=256,
+            stream=False,
+        )
+        return response.choices[0].message.content or ""
 
     async def is_available(self) -> bool:
-        """Check if Ollama is running and the model is available."""
+        """Check if Groq API is reachable and the API key is valid."""
         try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
-                if response.status_code != 200:
-                    return False
-                models = [m["name"] for m in response.json().get("models", [])]
-                return any(self.model.split(":")[0] in m for m in models)
-        except Exception:
+            await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": "ping"}],
+                max_tokens=1,
+                stream=False,
+            )
+            return True
+        except Exception as e:
+            logger.warning("Groq API unavailable", error=str(e))
             return False
+
+
+# Backward-compatible alias so existing imports don't break
+OllamaClient = GroqClient

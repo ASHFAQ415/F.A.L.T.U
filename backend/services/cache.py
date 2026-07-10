@@ -21,7 +21,7 @@ import structlog
 from cachetools import TTLCache
 
 from config import get_settings
-from services.embedder import OllamaEmbedder
+from services.embedder import SentenceTransformerEmbedder
 
 settings = get_settings()
 logger = structlog.get_logger()
@@ -39,7 +39,7 @@ class SemanticCache:
     """
 
     def __init__(self):
-        self._embedder = OllamaEmbedder()
+        self._embedder = SentenceTransformerEmbedder()
         # TTLCache: max 1000 entries, expire after 1 hour
         self._cache: TTLCache = TTLCache(
             maxsize=1000,
@@ -60,7 +60,7 @@ class SemanticCache:
             return None
 
         try:
-            query_embedding = await self._embedder.embed(query)
+            query_embedding = self._embedder._embed_sync(query)
         except Exception:
             return None  # Cache miss on embedding failure
 
@@ -111,7 +111,7 @@ class SemanticCache:
             return
 
         try:
-            query_embedding = await self._embedder.embed(query)
+            query_embedding = self._embedder._embed_sync(query)
         except Exception:
             return  # Don't crash if caching fails
 

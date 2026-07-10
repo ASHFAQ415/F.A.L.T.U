@@ -1,63 +1,17 @@
 version: "3.9"
 
 # ============================================================
-#  Free Enterprise RAG Chatbot — Docker Compose Stack
-#  All services run 100% free on Oracle Cloud Always Free tier
-#  No subscriptions. No API keys. No monthly bills.
+#  Enterprise RAG Chatbot — Docker Compose Stack
+#  Local development: docker compose up
+#  Production: Deploy to Railway (see README.md)
 # ============================================================
 
 services:
 
   # ──────────────────────────────────────────────
-  # Ollama — runs LLM + embeddings locally (FREE)
-  # Models: llama3.1:8b (chat) + nomic-embed-text (embeddings)
-  # ──────────────────────────────────────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: rag_ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama   # Persist downloaded models
-    environment:
-      - OLLAMA_KEEP_ALIVE=24h       # Keep models loaded in RAM
-      - OLLAMA_NUM_PARALLEL=2       # Handle 2 concurrent requests
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s             # Give time for model downloads
-
-  # ──────────────────────────────────────────────
-  # Model Puller — downloads models on first start
-  # Runs once, then exits (one-shot service)
-  # ──────────────────────────────────────────────
-  model-puller:
-    image: ollama/ollama:latest
-    container_name: rag_model_puller
-    depends_on:
-      ollama:
-        condition: service_healthy
-    volumes:
-      - ollama_data:/root/.ollama
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        echo "📥 Pulling LLM model: llama3.1:8b ..."
-        ollama pull llama3.1:8b
-        echo "📥 Pulling embedding model: nomic-embed-text ..."
-        ollama pull nomic-embed-text
-        echo "📥 Pulling reranker model: cross-encoder support ..."
-        echo "✅ All models ready!"
-    environment:
-      - OLLAMA_HOST=http://ollama:11434
-    restart: "no"
-
-  # ──────────────────────────────────────────────
   # Backend — FastAPI orchestrator
   # Handles: auth, retrieval, LLM calls, ingestion
+  # LLM: Groq API (free, external) — no Ollama needed
   # ──────────────────────────────────────────────
   backend:
     build:
@@ -65,25 +19,22 @@ services:
       dockerfile: Dockerfile
     container_name: rag_backend
     restart: unless-stopped
-    depends_on:
-      ollama:
-        condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
-      - rag_data:/app/data          # ChromaDB + SQLite + uploaded docs
+      - rag_data:/app/data          # ChromaDB + uploaded docs
       - ./backend:/app              # Hot reload in development
     env_file:
       - .env
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
       - DATA_DIR=/app/data
+      - CHROMA_DATA_DIR=/app/data/chroma
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 20s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 60s             # Allow time for sentence-transformers model download
 
   # ──────────────────────────────────────────────
   # Frontend — Streamlit chat UI
@@ -121,7 +72,6 @@ services:
       - backend
     ports:
       - "80:80"
-      - "443:443"
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - nginx_logs:/var/log/nginx
@@ -150,7 +100,8 @@ services:
 
   # ──────────────────────────────────────────────
   # Grafana — Beautiful monitoring dashboards (FREE)
-  # Access at http://<your-ip>:3000 (admin/admin)
+  # Access at http://localhost:3000 (admin / set in .env)
+  # Dashboard auto-provisioned: RAG Chatbot API metrics
   # ──────────────────────────────────────────────
   grafana:
     image: grafana/grafana:latest
@@ -162,6 +113,8 @@ services:
       - "3000:3000"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/etc/grafana/dashboards:ro
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
@@ -171,8 +124,7 @@ services:
 # Named volumes — persisted across restarts
 # ──────────────────────────────────────────────
 volumes:
-  ollama_data:      # Ollama model weights (~8GB for llama3.1:8b)
-  rag_data:         # ChromaDB vectors + SQLite database + uploaded docs
+  rag_data:         # ChromaDB vectors + uploaded docs
   prometheus_data:  # Prometheus time-series metrics
   grafana_data:     # Grafana dashboards and settings
   nginx_logs:       # Nginx access/error logs
