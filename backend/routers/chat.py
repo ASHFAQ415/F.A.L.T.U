@@ -50,13 +50,23 @@ _reranker = CrossEncoderReranker()
 _cache = SemanticCache()
 _llm = GroqClient()
 
-# Document-listing intent keywords
+# Document-listing intent — ONLY fires when user clearly wants to know what docs EXIST.
+# Does NOT fire for content queries that mention 'document' (e.g. 'summarize the given document').
 _DOC_LIST_PATTERNS = re.compile(
-    r"(?i)(\blist\b|\bshow\b|\bwhat\b.*\bdocuments?\b|\bwhich\b.*\bdocuments?\b"
-    r"|\bavailable\b.*\bdocuments?\b|\bdocuments?\b.*\bavailable\b"
-    r"|\bfiles?\b.*\buploaded\b|\buploaded\b.*\bfiles?\b"
-    r"|\bwhat.*\bfiles?\b|\bknowledge base\b|\bwhat.*\bdo you have\b"
-    r"|\bwhat.*\bcan you access\b|\bgiven documents?\b|\bshare.*\bdocuments?\b)"
+    r"(?i)("
+    # Explicit: list/show/display + documents/files
+    r"\b(list|show me|tell me|display)\b.{0,40}\b(documents?|files?)\b"
+    # What documents do you have / are available
+    r"|\bwhat\b.{0,50}\b(documents?|files?)\b.{0,40}\b(do you have|available|uploaded|can access)\b"
+    # Which documents are available/uploaded
+    r"|\bwhich\b.{0,30}\b(documents?|files?)\b.{0,40}\b(available|uploaded|do you have)\b"
+    # Documents available / uploaded documents
+    r"|\bdocuments?\b.{0,20}\b(available|uploaded|in (the |your )?knowledge base)\b"
+    r"|\buploaded (documents?|files?)\b"
+    # Knowledge base queries
+    r"|\bknowledge base\b"
+    r"|\bwhat.{0,20}\bdo you (have|know about|contain)\b"
+    r")"
 )
 
 
