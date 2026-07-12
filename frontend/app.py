@@ -255,7 +255,30 @@ div[data-testid="stChatMessage"]:not(:has([aria-label*="user"])) {
     font-family: 'JetBrains Mono', monospace;
 }
 
-/* ── Chat Input ── */
+/
+/* -- Server status badges (login page) -- */
+.badge-online {
+    display: inline-block;
+    background: rgba(52, 211, 153, 0.15);
+    border: 1px solid rgba(52, 211, 153, 0.4);
+    color: #34d399;
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}
+.badge-offline {
+    display: inline-block;
+    background: rgba(248, 113, 113, 0.15);
+    border: 1px solid rgba(248, 113, 113, 0.4);
+    color: #f87171;
+    border-radius: 20px;
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+* ── Chat Input ── */
 [data-testid="stChatInputContainer"] {
     background: rgba(15, 15, 30, 0.9) !important;
     border: 1px solid rgba(124, 58, 237, 0.4) !important;
@@ -645,31 +668,92 @@ def show_login():
         </div>
         """, unsafe_allow_html=True)
 
+        # Show server connectivity status before login
+        try:
+            health_r = requests.get(f"{BACKEND_URL}/health", timeout=5)
+            if health_r.status_code == 200:
+                h = health_r.json()
+                model = h.get('model', 'llama-3.1-8b-instant')
+                st.markdown(
+                    f"<div style='text-align:center;margin-bottom:12px;'>"
+                    f"<span class='badge-online'>🟢 Server Online · {model}</span>"
+                    f"</div>",
+                    unsafe_allow_html=True
+                )
+        except requests.exceptions.ConnectionError:
+            st.markdown(
+                "<div style='text-align:center;margin-bottom:12px;'>"
+                "<span class='badge-offline'>🔴 Server Offline — Check connection</span>"
+                "</div>",
+                unsafe_allow_html=True
+            )
+        except requests.exceptions.Timeout:
+            st.markdown(
+                "<div style='text-align:center;margin-bottom:12px;'>"
+                "<span class='badge-online' style='background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.4);color:#fcd34d;'>"
+                "⏳ Server Starting Up...</span></div>",
+                unsafe_allow_html=True
+            )
+        except Exception:
+            pass
+
         with st.form("login_form"):
             username = st.text_input("👤 Username", placeholder="Who are you? (No judgment)")
             password = st.text_input("🔑 Password", type="password", placeholder="The secret handshake")
             submitted = st.form_submit_button("🚀 Beam Me In", use_container_width=True)
 
             if submitted:
-                with st.spinner("🤡 Checking if you're not a robot..."):
-                    try:
-                        r = requests.post(
-                            f"{BACKEND_URL}/auth/login",
-                            data={"username": username, "password": password},
-                            timeout=10,
-                        )
-                        if r.status_code == 200:
-                            data = r.json()
-                            st.session_state.authenticated = True
-                            st.session_state.token = data["access_token"]
-                            st.session_state.user = data["user"]
-                            st.success("✅ Identity confirmed. You're (probably) human. Welcome!")
-                            time.sleep(0.8)
-                            st.rerun()
-                        else:
-                            st.error("❌ Wrong credentials. Did you try 'password123'? Yeah, that's why we don't use that.")
-                    except Exception as e:
-                        st.error(f"⚠️ Backend is having an existential crisis.\n\n`{e}`")
+                if not username.strip() or not password.strip():
+                    st.warning("⚠️ Please enter both username and password.")
+                else:
+                    with st.spinner("🤡 Authenticating..."):
+                        for attempt in range(2):
+                            try:
+                                r = requests.post(
+                                    f"{BACKEND_URL}/auth/login",
+                                    data={"username": username, "password": password},
+                                    timeout=30,
+                                )
+                                if r.status_code == 200:
+                                    data = r.json()
+                                    st.session_state.authenticated = True
+                                    st.session_state.token = data["access_token"]
+                                    st.session_state.user = data["user"]
+                                    st.success("✅ Welcome! Loading your workspace...")
+                                    time.sleep(0.5)
+                                    st.rerun()
+                                    break
+                                elif r.status_code == 401:
+                                    st.error("❌ Wrong username or password.")
+                                    break
+                                elif r.status_code == 403:
+                                    st.error("🚫 Account disabled. Contact your admin.")
+                                    break
+                                else:
+                                    st.error(f"❌ Login failed (code {r.status_code}). Please try again.")
+                                    break
+                            except requests.exceptions.ReadTimeout:
+                                if attempt == 0:
+                                    st.info("⏳ Server is warming up... Retrying in 5 seconds...")
+                                    time.sleep(5)
+                                    continue
+                                else:
+                                    st.warning(
+                                        "⏳ **Server is still starting up.**\n\n"
+                                        "Railway spins down idle services. "
+                                        "Please wait **30-60 seconds** then click **🚀 Beam Me In** again."
+                                    )
+                            except requests.exceptions.ConnectionError:
+                                st.error(
+                                    "🔌 **Cannot connect to the server.**\n\n"
+                                    "• Check your internet connection\n"
+                                    "• The server may be restarting\n"
+                                    "• Try again in 30 seconds"
+                                )
+                                break
+                            except Exception as e:
+                                st.error("⚠️ Unexpected error. Please try again in a moment.")
+                                break
 
         st.markdown("""
         <div style='text-align:center; color:#4b5563; font-size:12px; margin-top:20px; line-height:2;'>
