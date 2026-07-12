@@ -157,6 +157,34 @@ header { visibility: hidden; }
     transform: translateY(-1px) !important;
 }
 
+/* ── CRITICAL: Force bright readable text in ALL chat messages ── */
+[data-testid="stChatMessage"] p,
+[data-testid="stChatMessage"] div,
+[data-testid="stChatMessage"] span,
+[data-testid="stChatMessage"] li,
+[data-testid="stChatMessage"] ul,
+[data-testid="stChatMessage"] ol,
+[data-testid="stChatMessage"] strong,
+[data-testid="stChatMessage"] em,
+[data-testid="stChatMessage"] h1,
+[data-testid="stChatMessage"] h2,
+[data-testid="stChatMessage"] h3,
+[data-testid="stChatMessage"] h4,
+[data-testid="stChatMessage"] a,
+[data-testid="stChatMessage"] code {
+    color: #e2e8f0 !important;
+}
+[data-testid="stChatMessage"] code {
+    background: rgba(0,0,0,0.3) !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    font-size: 13px !important;
+}
+[data-testid="stChatMessage"] strong {
+    color: #f1f5f9 !important;
+    font-weight: 700 !important;
+}
+
 /* User message */
 [data-testid="stChatMessage"][data-testid*="user"],
 div[data-testid="stChatMessage"]:has([aria-label*="user"]) {
@@ -168,6 +196,17 @@ div[data-testid="stChatMessage"]:has([aria-label*="user"]) {
 div[data-testid="stChatMessage"]:not(:has([aria-label*="user"])) {
     background: linear-gradient(135deg, rgba(6, 182, 212, 0.08), rgba(124, 58, 237, 0.08)) !important;
     border: 1px solid rgba(6, 182, 212, 0.2) !important;
+}
+
+/* ── Caption / small text inside chat ── */
+[data-testid="stChatMessage"] [data-testid="stCaptionContainer"] p {
+    color: #6b7280 !important;
+    font-size: 11px !important;
+}
+
+/* ── Markdown text in general app ── */
+.stMarkdown p, .stMarkdown li, .stMarkdown span {
+    color: #e2e8f0;
 }
 
 /* ── Chat Input ── */
@@ -414,6 +453,7 @@ def init_session():
         "page": "chat",
         "history_search": "",
         "active_session_id": None,
+        "pending_query": None,   # For clickable prompt chips
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -426,49 +466,102 @@ def init_session():
 def api_headers() -> Dict:
     return {"Authorization": f"Bearer {st.session_state.token}"}
 
-def api_get(path: str) -> Optional[Dict]:
+def api_get(path: str, silent: bool = False) -> Optional[Dict]:
     try:
-        r = requests.get(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=10)
+        r = requests.get(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=15)
         r.raise_for_status()
         return r.json()
+    except requests.exceptions.ConnectionError:
+        if not silent:
+            st.warning("⚠️ Cannot reach the server. Check your connection.")
+        return None
+    except requests.exceptions.Timeout:
+        if not silent:
+            st.warning("⏱️ Request timed out. The server may be busy.")
+        return None
+    except requests.exceptions.HTTPError as e:
+        if not silent and e.response.status_code not in (401, 403):
+            st.error(f"🚫 Server error ({e.response.status_code}). Please try again.")
+        return None
     except Exception:
         return None
 
 def api_post(path: str, data: Dict = None, files=None) -> Optional[Dict]:
     try:
         if files:
-            r = requests.post(f"{BACKEND_URL}{path}", headers=api_headers(), data=data, files=files, timeout=60)
+            r = requests.post(f"{BACKEND_URL}{path}", headers=api_headers(), data=data, files=files, timeout=90)
         else:
-            r = requests.post(f"{BACKEND_URL}{path}", headers=api_headers(), json=data, timeout=60)
+            r = requests.post(f"{BACKEND_URL}{path}", headers=api_headers(), json=data, timeout=90)
         r.raise_for_status()
         return r.json()
+    except requests.exceptions.ConnectionError:
+        st.error("⚠️ Cannot reach the server. Please check your connection and try again.")
+        return None
+    except requests.exceptions.Timeout:
+        st.error("⏱️ Request timed out. The server may be processing a large file — please wait and refresh.")
+        return None
+    except requests.exceptions.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.response.json().get("detail", "")
+        except Exception:
+            pass
+        st.error(f"🚫 {detail or 'Request failed. Please try again.'}")
+        return None
     except Exception as e:
-        st.error(f"💀 API said nope: {e}")
+        st.error(f"🚫 Unexpected error: {str(e)[:100]}")
         return None
 
 def api_delete(path: str) -> bool:
     try:
-        r = requests.delete(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=10)
+        r = requests.delete(f"{BACKEND_URL}{path}", headers=api_headers(), timeout=15)
         r.raise_for_status()
         return True
+    except requests.exceptions.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.response.json().get("detail", "")
+        except Exception:
+            pass
+        st.error(f"🚫 {detail or 'Delete failed. You may not have permission.'}")
+        return False
     except Exception as e:
-        st.error(f"💀 Delete failed (the document is immortal): {e}")
+        st.error(f"🚫 Delete failed: {str(e)[:80]}")
         return False
 
 def stream_chat(query: str, session_id: str, corpus: str):
     url = f"{BACKEND_URL}/v1/chat"
-    payload = {"query": query, "session_id": session_id, "corpus": corpus, "temperature": 0.7, "max_tokens": 512}
+    # max_tokens=1024 gives room for complete answers; backend enforces minimum too
+    payload = {"query": query, "session_id": session_id, "corpus": corpus, "temperature": 0.7, "max_tokens": 1024}
     headers = {**api_headers(), "Accept": "text/event-stream"}
-    with requests.post(url, json=payload, headers=headers, stream=True, timeout=120) as resp:
-        resp.raise_for_status()
-        client = SSEClient(resp)
-        for event in client.events():
-            if event.data == "[DONE]":
-                break
+    try:
+        with requests.post(url, json=payload, headers=headers, stream=True, timeout=120) as resp:
+            resp.raise_for_status()
+            client = SSEClient(resp)
+            for event in client.events():
+                if event.data == "[DONE]":
+                    break
+                try:
+                    yield json.loads(event.data)
+                except json.JSONDecodeError:
+                    continue
+    except requests.exceptions.ConnectionError:
+        yield {"type": "error", "content": "⚠️ Cannot reach the server. Please check your internet connection."}
+    except requests.exceptions.Timeout:
+        yield {"type": "error", "content": "⏱️ The request timed out. The server may be overloaded — please try again in a moment."}
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 400:
             try:
-                yield json.loads(event.data)
-            except json.JSONDecodeError:
-                continue
+                detail = e.response.json().get("detail", "Invalid request.")
+            except Exception:
+                detail = "Invalid request."
+            yield {"type": "error", "content": f"🚫 {detail}"}
+        elif e.response.status_code == 403:
+            yield {"type": "error", "content": "🔒 You don't have permission to access this knowledge base."}
+        elif e.response.status_code == 429:
+            yield {"type": "error", "content": "🐢 You're sending messages too fast. Please slow down."}
+        else:
+            yield {"type": "error", "content": "🚫 Server error. Please try again."}
 
 
 # ─────────────────────────────────────────────────────────
@@ -697,33 +790,36 @@ def show_chat():
     </div>
     """, unsafe_allow_html=True)
 
-    # Empty state
+    # Empty state with CLICKABLE chips
     if not st.session_state.messages:
         corpus = st.session_state.corpus
         st.markdown(f"""
-        <div style='text-align:center; padding: 60px 20px; color:#374151;'>
+        <div style='text-align:center; padding: 40px 20px 20px;'>
             <div style='font-size:64px; margin-bottom:16px;'>
                 <span class='floating'>🤡</span>
             </div>
-            <div style='font-size:18px; font-weight:600; color:#6b7280; margin-bottom:8px;'>
+            <div style='font-size:18px; font-weight:600; color:#9ca3af; margin-bottom:8px;'>
                 {random.choice(EMPTY_STATE_MSGS)}
             </div>
-            <div style='font-size:13px; color:#4b5563;'>
+            <div style='font-size:13px; color:#6b7280;'>
                 Searching in: <span style='color:#a855f7; font-weight:600;'>{corpus}</span> knowledge base
-            </div>
-            <div style='margin-top:30px; display:flex; flex-wrap:wrap; gap:10px; justify-content:center;'>
-                <div style='background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:12px 16px;font-size:13px;color:#94a3b8;max-width:200px;cursor:pointer;'>
-                    💡 "Summarize the main points"
-                </div>
-                <div style='background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:12px 16px;font-size:13px;color:#94a3b8;max-width:200px;'>
-                    🔍 "What does the policy say about X?"
-                </div>
-                <div style='background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.2);border-radius:12px;padding:12px 16px;font-size:13px;color:#94a3b8;max-width:200px;'>
-                    📊 "Compare these two documents"
-                </div>
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+        # Clickable suggestion chips using Streamlit buttons
+        st.markdown("<div style='text-align:center; color:#6b7280; font-size:12px; margin-bottom:8px;'>✨ Try one of these:</div>", unsafe_allow_html=True)
+        chip_col1, chip_col2, chip_col3 = st.columns(3)
+        suggestions = [
+            ("📋", "List all documents"),
+            ("📝", "Summarize the main points"),
+            ("🔍", "What are the key topics covered?"),
+        ]
+        for col, (icon, text) in zip([chip_col1, chip_col2, chip_col3], suggestions):
+            with col:
+                if st.button(f"{icon} {text}", use_container_width=True, key=f"chip_{text[:15]}"):
+                    st.session_state.pending_query = text
+                    st.rerun()
 
     # Chat history
     for msg in st.session_state.messages:
@@ -750,9 +846,13 @@ def show_chat():
                         api_post(f"/v1/feedback?message_id={msg['message_id']}&rating=-1")
                         st.toast("😤 Got it. FALTU will try harder... maybe.")
 
-    # Chat input
+    # Chat input — also handle pending queries from chip clicks
     corpus = st.session_state.corpus
-    if query := st.chat_input(f"Ask F.A.L.T.U about '{corpus}' docs... 🤡"):
+    pending = st.session_state.get("pending_query", None)
+    if pending:
+        st.session_state["pending_query"] = None  # clear it
+    query = pending or st.chat_input(f"Ask F.A.L.T.U about '{corpus}' docs... 🤡")
+    if query:
         st.session_state.messages.append({"role": "user", "content": query})
         with st.chat_message("user", avatar="🧑"):
             st.markdown(query)
@@ -811,8 +911,18 @@ def show_chat():
                             api_post(f"/v1/feedback?message_id={message_id}&rating=-1")
                             st.toast("😤 FALTU will train harder. Or cry. TBD.")
 
+            except requests.exceptions.ConnectionError:
+                full_response = "⚠️ **Cannot reach the server.** Please check your internet connection and try again."
+                placeholder.markdown(full_response)
+            except requests.exceptions.Timeout:
+                full_response = "⏱️ **Request timed out.** The server may be busy — please try again in a moment."
+                placeholder.markdown(full_response)
             except Exception as e:
-                full_response = f"💀 FALTU has crashed spectacularly:\n\n`{str(e)}`\n\nCheck that the backend is running and Groq API key is set."
+                err = str(e)
+                if "groq" in err.lower() or "api_key" in err.lower():
+                    full_response = "🔑 **AI service error.** The Groq API key may be invalid or rate limited. Contact admin."
+                else:
+                    full_response = f"🚫 **Something went wrong.** Please try again.\n\n*({err[:120]})*"
                 placeholder.markdown(full_response)
 
         st.session_state.messages.append({
@@ -858,7 +968,11 @@ def show_upload():
                         files={"file": (uploaded.name, uploaded.getvalue(), uploaded.type)},
                     )
                     if result:
-                        st.success(f"✅ {result.get('message','Uploaded!')} ID: `{result.get('document_id')}`")
+                        msg = result.get('message', 'Uploaded successfully!')
+                        chunks = result.get('chunk_count', '?')
+                        st.success(f"✅ {msg}")
+                        if result.get('document_id'):
+                            st.info(f"📄 Document ID: `{result.get('document_id')}` | Processing in background...")
                         st.rerun()
 
     with col2:

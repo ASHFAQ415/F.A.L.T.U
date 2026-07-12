@@ -142,7 +142,7 @@ class ChatRequest(SQLModel):
     session_id: Optional[str] = None   # Omit for new session
     corpus: str = Field(default="public")
     temperature: float = Field(default=0.7, ge=0.0, le=1.0)
-    max_tokens: int = Field(default=512, ge=50, le=2000)
+    max_tokens: int = Field(default=1024, ge=50, le=4096)
 
 
 class FeedbackRequest(SQLModel):

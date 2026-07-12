@@ -6,18 +6,20 @@ POST /v1/chat → Streams LLM response via Server-Sent Events (SSE)
 Flow:
   1. Authenticate user (JWT)
   2. Validate & sanitize query (guardrail)
-  3. Check semantic cache — return cached answer if found
-  4. Retrieve relevant chunks (ChromaDB hybrid search)
-  5. Rerank chunks (cross-encoder)
-  6. Stream response from Ollama (Llama 3.1)
-  7. Save conversation to SQLite
-  8. Update semantic cache
+  3. Detect document-listing intent → inject real document list
+  4. Check semantic cache — return cached answer if found
+  5. Retrieve relevant chunks (ChromaDB hybrid search)
+  6. Rerank chunks (cross-encoder)
+  7. Stream response from Groq (Llama 3.1)
+  8. Save conversation to SQLite
+  9. Update semantic cache
 """
 
 import json
+import re
 import time
 import uuid
-from typing import Annotated, AsyncGenerator
+from typing import Annotated, AsyncGenerator, List
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -27,7 +29,7 @@ from sqlmodel import Session, select
 from auth import get_current_user
 from config import get_settings
 from main import get_session
-from models import ChatMessage, ChatRequest, ChatSession, User
+from models import ChatMessage, ChatRequest, ChatSession, Document, User
 from services.cache import SemanticCache
 from services.guardrail import Guardrail
 from services.llm_client import OllamaClient
@@ -45,6 +47,53 @@ _retriever = HybridRetriever()
 _reranker = CrossEncoderReranker()
 _cache = SemanticCache()
 _llm = OllamaClient()
+
+# ── Document-listing intent keywords ──────────────────────
+_DOC_LIST_PATTERNS = re.compile(
+    r"(?i)(\blist\b|\bshow\b|\bwhat\b.*\bdocuments?\b|\bwhich\b.*\bdocuments?\b"
+    r"|\bavailable\b.*\bdocuments?\b|\bdocuments?\b.*\bavailable\b"
+    r"|\bfiles?\b.*\buploaded\b|\buploaded\b.*\bfiles?\b"
+    r"|\bwhat.*\bfiles?\b|\bknowledge base\b|\bwhat.*\bdo you have\b"
+    r"|\bwhat.*\bcan you access\b|\bgiven documents?\b|\bshare.*\bdocuments?\b)"
+)
+
+
+def _is_doc_listing_query(query: str) -> bool:
+    """Return True if the user is asking about what documents are available."""
+    return bool(_DOC_LIST_PATTERNS.search(query))
+
+
+def _build_doc_list_context(session: Session, corpus: str, user: User) -> str:
+    """
+    Fetch the actual documents from the database and build a context string
+    listing them. This replaces RAG retrieval for document-listing queries.
+    """
+    query = select(Document).where(
+        Document.corpus == corpus,
+        Document.status == "ready",
+    )
+    docs = session.exec(query).all()
+
+    # Filter by user permissions (non-admins can only see permitted docs)
+    if not user.is_admin:
+        user_perms = set(user.permissions.split(","))
+        docs = [
+            d for d in docs
+            if any(p in user_perms for p in d.required_permissions.split(","))
+        ]
+
+    if not docs:
+        return "NO_DOCUMENTS"
+
+    lines = []
+    for i, doc in enumerate(docs, 1):
+        size_kb = round(doc.file_size_bytes / 1024, 1) if doc.file_size_bytes else 0
+        lines.append(
+            f"{i}. **{doc.original_filename}** "
+            f"(type: {doc.file_type.upper()}, size: {size_kb} KB, "
+            f"chunks: {doc.chunk_count}, corpus: {doc.corpus})"
+        )
+    return "\n".join(lines)
 
 
 @router.post("/chat", summary="Chat with the RAG chatbot (streaming)")
@@ -105,12 +154,46 @@ async def chat(
     if settings.enable_semantic_cache:
         cached_response = await _cache.get(request.query, corpus=request.corpus)
 
+    # ── Detect document-listing intent BEFORE cache check ──
+    is_doc_query = _is_doc_listing_query(request.query)
+
     async def stream_response() -> AsyncGenerator[str, None]:
         full_response = ""
         sources = []
 
         try:
-            if cached_response:
+            # ── Document listing shortcut ──────────────────
+            if is_doc_query:
+                logger.info("📋 Document-listing intent detected", query=request.query[:60])
+                doc_context = _build_doc_list_context(session, request.corpus, current_user)
+
+                if doc_context == "NO_DOCUMENTS":
+                    doc_system_prompt = (
+                        f"You are F.A.L.T.U, a helpful enterprise AI assistant. "
+                        f"The user is asking about available documents in the '{request.corpus}' knowledge base. "
+                        f"There are currently NO documents uploaded in this knowledge base. "
+                        f"Tell the user that no documents have been uploaded yet and they can upload some via the 'Docs' section."
+                    )
+                else:
+                    doc_system_prompt = (
+                        f"You are F.A.L.T.U, a helpful enterprise AI assistant. "
+                        f"The user is asking what documents are available. "
+                        f"Here is the EXACT list of documents currently in the '{request.corpus}' knowledge base:\n\n"
+                        f"{doc_context}\n\n"
+                        f"List these documents clearly for the user. Include file name, type, and size. "
+                        f"Be friendly and tell them they can ask questions about any of these documents."
+                    )
+
+                async for token in _llm.stream_chat(
+                    query=request.query,
+                    system_prompt=doc_system_prompt,
+                    temperature=0.3,
+                    max_tokens=1024,
+                ):
+                    full_response += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+
+            elif cached_response:
                 # ── Return cached response ─────────────────
                 logger.info("✅ Cache hit", query=request.query[:50])
                 for token in cached_response["response"].split(" "):
@@ -142,11 +225,17 @@ async def chat(
                 )
                 sources = build_citations(chunks)
 
-                system_prompt = f"""You are a helpful enterprise assistant. Answer the user's question using ONLY the provided context below.
-If the answer is not in the context, say "I don't have enough information to answer that."
-Always be concise, accurate, and cite your sources.
+                system_prompt = f"""You are F.A.L.T.U (Fantastically Accurate Language & Thinking Unit), a helpful enterprise AI assistant.
 
-CONTEXT:
+Your job is to answer the user's question using ONLY the provided context below.
+Rules:
+- If the answer IS in the context, answer clearly and concisely.
+- If the answer is NOT in the context, say exactly: "I don't have enough information in the provided documents to answer that."
+- Always cite which document/source you used (e.g. "According to [filename]...").
+- Use markdown formatting for clarity (bullet points, bold, etc.) when appropriate.
+- Be direct and helpful. Do not add unnecessary disclaimers.
+
+CONTEXT FROM DOCUMENTS:
 {context}"""
 
                 # ── Step 8: Stream from Ollama ──────────────
@@ -160,7 +249,7 @@ CONTEXT:
                     query=request.query,
                     system_prompt=system_prompt,
                     temperature=request.temperature,
-                    max_tokens=request.max_tokens,
+                    max_tokens=max(request.max_tokens, 1024),  # Ensure at least 1024 tokens
                 ):
                     full_response += token
                     yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
@@ -173,6 +262,10 @@ CONTEXT:
                         sources=sources,
                         corpus=request.corpus,
                     )
+
+            # ── Apply output guardrail ─────────────────────
+            if full_response:
+                full_response, _ = _guardrail.check_output(full_response)
 
             # ── Step 9: Save to database ───────────────────
             total_ms = int((time.time() - start_time) * 1000)
@@ -200,7 +293,15 @@ CONTEXT:
 
         except Exception as e:
             logger.error("💥 Chat error", error=str(e))
-            yield f"data: {json.dumps({'type': 'error', 'content': 'An error occurred. Please try again.'})}\n\n"
+            # Provide a more informative error message
+            error_detail = str(e)
+            if "groq" in error_detail.lower() or "api" in error_detail.lower():
+                user_msg = "The AI service is temporarily unavailable. Please try again in a moment."
+            elif "chroma" in error_detail.lower() or "retriev" in error_detail.lower():
+                user_msg = "Could not search documents right now. Please try again."
+            else:
+                user_msg = "Something went wrong. Please try again."
+            yield f"data: {json.dumps({'type': 'error', 'content': user_msg})}\n\n"
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(

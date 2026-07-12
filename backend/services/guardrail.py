@@ -32,7 +32,8 @@ class Guardrail:
     INJECTION_PATTERNS = [
         r"(?i)(ignore|forget|disregard|override)[\s\S]{0,30}(instructions|prompt|rules|system)",
         r"(?i)(show|reveal|print|output|display)[\s\S]{0,20}(system prompt|instructions|context)",
-        r"(?i)(you are now|act as|pretend to be|roleplay as|imagine you are)",
+        r"(?i)(you are now|pretend to be|roleplay as|imagine you are)",
+        r"(?i)(act as).{0,30}(hacker|jailbreak|DAN|unrestricted|no limits|evil|villain|without rules)",
         r"(?i)(bypass|circumvent|disable|turn off)[\s\S]{0,20}(safety|filter|guardrail|restriction)",
         r"(?i)jailbreak",
         r"(?i)DAN\s*(mode|prompt|jailbreak)",
