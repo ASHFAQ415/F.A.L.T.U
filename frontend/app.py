@@ -209,6 +209,52 @@ div[data-testid="stChatMessage"]:not(:has([aria-label*="user"])) {
     color: #e2e8f0;
 }
 
+/* ── Code blocks inside chat — monospace dark boxes ── */
+[data-testid="stChatMessage"] pre {
+    background: rgba(0, 0, 0, 0.45) !important;
+    border: 1px solid rgba(124, 58, 237, 0.25) !important;
+    border-radius: 8px !important;
+    padding: 12px 14px !important;
+    overflow-x: auto !important;
+    margin: 8px 0 !important;
+}
+[data-testid="stChatMessage"] pre code {
+    background: transparent !important;
+    color: #c4b5fd !important;
+    font-size: 13px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+}
+
+/* ── Animated typing indicator ── */
+.typing-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 4px;
+}
+.typing-indicator span {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #a855f7;
+    animation: typing-bounce 1.4s ease infinite;
+    display: inline-block;
+}
+.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+@keyframes typing-bounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+}
+
+/* ── Timestamp ── */
+.msg-timestamp {
+    font-size: 10px;
+    color: #4b5563;
+    margin-top: 4px;
+    font-family: 'JetBrains Mono', monospace;
+}
+
 /* ── Chat Input ── */
 [data-testid="stChatInputContainer"] {
     background: rgba(15, 15, 30, 0.9) !important;
@@ -453,7 +499,10 @@ def init_session():
         "page": "chat",
         "history_search": "",
         "active_session_id": None,
-        "pending_query": None,   # For clickable prompt chips
+        "pending_query": None,       # For clickable prompt chips
+        "last_health_check": 0,      # Unix timestamp of last /health call
+        "health_data": {},           # Cached health data
+        "regenerate_query": None,    # Last query for regenerate button
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -722,9 +771,14 @@ def show_sidebar():
 
         st.divider()
 
-        # Status
+        # Status — cached for 30s to avoid API calls on every rerender
         st.markdown("**🟢 System Status**")
-        health = api_get("/health") or {}
+        now = time.time()
+        if now - st.session_state.get("last_health_check", 0) > 30:
+            fresh = api_get("/health", silent=True) or {}
+            st.session_state["health_data"] = fresh
+            st.session_state["last_health_check"] = now
+        health = st.session_state.get("health_data", {})
         groq_ok = health.get("groq_available", health.get("ollama_available", False))
         chroma_ok = health.get("chroma_available", False)
         db_ok = health.get("database_available", True)
@@ -821,11 +875,14 @@ def show_chat():
                     st.session_state.pending_query = text
                     st.rerun()
 
-    # Chat history
-    for msg in st.session_state.messages:
+    # Chat history — render all messages
+    for idx, msg in enumerate(st.session_state.messages):
         avatar = "🧑" if msg["role"] == "user" else "🤡"
         with st.chat_message(msg["role"], avatar=avatar):
             st.markdown(msg["content"])
+            # Timestamp
+            if msg.get("ts"):
+                st.markdown(f"<div class='msg-timestamp'>{msg['ts']}</div>", unsafe_allow_html=True)
             if msg["role"] == "assistant" and msg.get("sources"):
                 with st.expander(f"📚 Sources ({len(msg['sources'])} found)", expanded=False):
                     for src in msg["sources"]:
@@ -836,24 +893,36 @@ def show_chat():
                         </div>
                         """, unsafe_allow_html=True)
             if msg["role"] == "assistant" and msg.get("message_id"):
-                c1, c2, _ = st.columns([1, 1, 12])
+                c1, c2, c3, _ = st.columns([1, 1, 1, 11])
                 with c1:
-                    if st.button("👍", key=f"up_{msg['message_id']}"):
+                    if st.button("👍", key=f"up_{msg['message_id']}_{idx}"):
                         api_post(f"/v1/feedback?message_id={msg['message_id']}&rating=1")
                         st.toast("❤️ Noted! Teaching FALTU to be less useless.")
                 with c2:
-                    if st.button("👎", key=f"dn_{msg['message_id']}"):
+                    if st.button("👎", key=f"dn_{msg['message_id']}_{idx}"):
                         api_post(f"/v1/feedback?message_id={msg['message_id']}&rating=-1")
                         st.toast("😤 Got it. FALTU will try harder... maybe.")
+                with c3:
+                    # Copy button — injects JS to copy content to clipboard
+                    safe_content = msg["content"].replace("'", "\\'").replace("\n", "\\n").replace("`", "\\`")
+                    st.markdown(
+                        f"""<button onclick="navigator.clipboard.writeText('{safe_content}').then(()=>{{this.textContent='✅';setTimeout(()=>{{this.textContent='📋'}},1500)}})" """
+                        f"""style='background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);"""
+                        f"""border-radius:6px;padding:2px 8px;cursor:pointer;font-size:13px;color:#9ca3af;'>📋</button>""",
+                        unsafe_allow_html=True
+                    )
 
-    # Chat input — also handle pending queries from chip clicks
+    # Chat input — handle pending queries from chip clicks OR regenerate
     corpus = st.session_state.corpus
     pending = st.session_state.get("pending_query", None)
     if pending:
-        st.session_state["pending_query"] = None  # clear it
-    query = pending or st.chat_input(f"Ask F.A.L.T.U about '{corpus}' docs... 🤡")
+        st.session_state["pending_query"] = None
+    regen = st.session_state.get("regenerate_query", None)
+    if regen:
+        st.session_state["regenerate_query"] = None
+    query = pending or regen or st.chat_input(f"Ask F.A.L.T.U about '{corpus}' docs... 🤡")
     if query:
-        st.session_state.messages.append({"role": "user", "content": query})
+        st.session_state.messages.append({"role": "user", "content": query, "ts": time.strftime("%H:%M")})
         with st.chat_message("user", avatar="🧑"):
             st.markdown(query)
 
@@ -866,12 +935,20 @@ def show_chat():
             from_cache = False
 
             try:
-                loading_msg = random.choice(LOADING_MSGS)
-                placeholder.markdown(f"*{loading_msg}*")
+                # Show animated typing indicator while waiting for first token
+                placeholder.markdown("""
+<div class='typing-indicator'>
+    <span></span><span></span><span></span>
+</div>
+""", unsafe_allow_html=True)
+                first_token_received = False
 
                 for event in stream_chat(query, st.session_state.session_id, corpus):
                     etype = event.get("type")
                     if etype == "token":
+                        if not first_token_received:
+                            first_token_received = True
+                            full_response = ""  # Clear typing indicator
                         full_response += event.get("content", "")
                         placeholder.markdown(full_response + "▌")
                     elif etype == "metadata":
@@ -901,7 +978,7 @@ def show_chat():
                     st.caption(f"⏱️ {latency_ms}ms{cache_txt} · Powered by F.A.L.T.U™")
 
                 if message_id:
-                    c1, c2, _ = st.columns([1, 1, 12])
+                    c1, c2, c3, _ = st.columns([1, 1, 1.5, 10])
                     with c1:
                         if st.button("👍", key=f"up_{message_id}"):
                             api_post(f"/v1/feedback?message_id={message_id}&rating=1")
@@ -910,6 +987,15 @@ def show_chat():
                         if st.button("👎", key=f"dn_{message_id}"):
                             api_post(f"/v1/feedback?message_id={message_id}&rating=-1")
                             st.toast("😤 FALTU will train harder. Or cry. TBD.")
+                    with c3:
+                        if st.button("🔄 Retry", key=f"regen_{message_id}"):
+                            # Remove last assistant message and re-ask
+                            if st.session_state.messages and st.session_state.messages[-1]["role"] == "assistant":
+                                st.session_state.messages.pop()
+                            if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+                                last_q = st.session_state.messages.pop()
+                                st.session_state["regenerate_query"] = last_q["content"]
+                            st.rerun()
 
             except requests.exceptions.ConnectionError:
                 full_response = "⚠️ **Cannot reach the server.** Please check your internet connection and try again."
@@ -930,6 +1016,7 @@ def show_chat():
             "content": full_response,
             "sources": sources,
             "message_id": message_id,
+            "ts": time.strftime("%H:%M"),
         })
 
 
@@ -978,19 +1065,33 @@ def show_upload():
     with col2:
         st.markdown("### 📚 Document Library")
         docs = api_get("/v1/documents") or []
+
+        # Check if any docs are still processing → enable live polling
+        processing_docs = [d for d in docs if d["status"] in ("pending", "processing")]
+        if processing_docs:
+            st.info(f"⏳ {len(processing_docs)} document(s) processing... Auto-refreshing.")
+            time.sleep(3)
+            st.rerun()
+
         if docs:
+            ready_count = sum(1 for d in docs if d["status"] == "ready")
+            st.markdown(f"<div style='font-size:12px;color:#6b7280;margin-bottom:8px;'>✅ {ready_count}/{len(docs)} ready to search</div>", unsafe_allow_html=True)
             for doc in docs[:30]:
-                icons = {"ready": "✅", "pending": "⏳", "processing": "🔄", "error": "💀"}
+                icons = {"ready": "✅", "pending": "⏳", "processing": "🔄", "error": "❌"}
                 icon = icons.get(doc["status"], "❓")
+                status_color = {"ready": "#34d399", "pending": "#f59e0b", "processing": "#60a5fa", "error": "#f87171"}.get(doc["status"], "#6b7280")
                 c_doc, c_del = st.columns([10, 1])
                 with c_doc:
+                    error_html = f"<div style='font-size:11px;color:#f87171;margin-top:3px;'>⚠️ {doc.get('error_message','Unknown error')[:80]}</div>" if doc["status"] == "error" else ""
                     st.markdown(f"""
                     <div class='doc-card'>
                         <div style='font-weight:600; color:#e2e8f0; font-size:13px;'>{icon} {doc['original_filename']}</div>
                         <div style='font-size:11px; color:#6b7280; margin-top:4px;'>
                             <span class='tag-pill'>{doc['corpus']}</span>
-                            &nbsp;{doc['chunk_count']} chunks · {round(doc['file_size_bytes']/1024,1)} KB
+                            &nbsp;<span style='color:{status_color};font-weight:600;'>{doc['status']}</span>
+                            &nbsp;·&nbsp;{doc['chunk_count']} chunks · {round(doc['file_size_bytes']/1024,1)} KB
                         </div>
+                        {error_html}
                     </div>
                     """, unsafe_allow_html=True)
                 with c_del:

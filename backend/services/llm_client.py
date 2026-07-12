@@ -43,19 +43,11 @@ class GroqClient:
         query: str,
         system_prompt: str,
         temperature: float = 0.7,
-        max_tokens: int = 512,
+        max_tokens: int = 1024,
     ) -> AsyncGenerator[str, None]:
         """
         Stream a chat response from Groq token by token.
-
-        Args:
-            query: The user's question
-            system_prompt: Context + instructions for the model
-            temperature: Creativity (0 = focused, 1 = creative)
-            max_tokens: Maximum tokens to generate
-
-        Yields:
-            Individual text tokens as they're generated
+        Single-turn: uses system prompt + user query only.
         """
         logger.info(
             "🚀 Streaming from Groq",
@@ -79,6 +71,52 @@ class GroqClient:
             if delta and delta.content:
                 yield delta.content
 
+    async def stream_chat_with_history(
+        self,
+        query: str,
+        system_prompt: str,
+        history: list,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+    ) -> AsyncGenerator[str, None]:
+        """
+        Stream a chat response with full conversation history for multi-turn memory.
+
+        Args:
+            query: The current user question
+            system_prompt: Context + instructions for the model
+            history: List of {"role": "user"|"assistant", "content": str} dicts
+            temperature: Creativity (0 = focused, 1 = creative)
+            max_tokens: Maximum tokens to generate
+
+        Yields:
+            Individual text tokens as they're generated
+        """
+        logger.info(
+            "🚀 Streaming from Groq (with history)",
+            model=self.model,
+            history_turns=len(history),
+            tokens=max_tokens,
+        )
+
+        # Build message list: system + history + current query
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(history)
+        messages.append({"role": "user", "content": query})
+
+        stream = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
+
+        async for chunk in stream:
+            delta = chunk.choices[0].delta
+            if delta and delta.content:
+                yield delta.content
+
     async def generate(self, prompt: str, temperature: float = 0.3) -> str:
         """
         Non-streaming generation — for internal use (e.g., query rewriting).
@@ -92,6 +130,33 @@ class GroqClient:
             stream=False,
         )
         return response.choices[0].message.content or ""
+
+    async def generate_hyde(self, query: str) -> str:
+        """
+        HyDE (Hypothetical Document Embedding): generate a short hypothetical
+        answer/passage that WOULD answer the query. Embed this instead of the
+        raw query to dramatically improve retrieval quality for short queries.
+
+        Returns:
+            A 2-3 sentence hypothetical answer string for embedding.
+        """
+        prompt = (
+            f"Write a short 2-3 sentence passage that would directly answer this question. "
+            f"Be factual and specific. Do NOT say you don't know.\n\n"
+            f"Question: {query}\n\nPassage:"
+        )
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+                max_tokens=150,
+                stream=False,
+            )
+            return response.choices[0].message.content or query
+        except Exception as e:
+            logger.warning("HyDE generation failed, using original query", error=str(e))
+            return query  # Fallback to original query
 
     async def is_available(self) -> bool:
         """Check if Groq API is reachable and the API key is valid."""

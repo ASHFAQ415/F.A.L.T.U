@@ -69,8 +69,14 @@ class Settings(BaseSettings):
 
     # ── Semantic Cache ────────────────────────────────────
     enable_semantic_cache: bool = True
-    cache_similarity_threshold: float = 0.92
+    cache_similarity_threshold: float = 0.95  # Raised from 0.92 — reduces false cache hits
     cache_ttl_seconds: int = 3600        # 1 hour
+
+    # ── Conversation Memory ───────────────────────────────
+    conversation_history_limit: int = 10  # Number of past messages (user+assistant) sent to LLM
+
+    # ── Query Expansion (HyDE) ────────────────────────────
+    hyde_enabled: bool = True            # Hypothetical Document Embedding for better retrieval
 
     # ── Rate Limiting ─────────────────────────────────────
     rate_limit_per_minute: int = 20      # Queries per user per minute

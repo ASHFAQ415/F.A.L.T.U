@@ -6,6 +6,7 @@ GET  /v1/documents → List all ingested documents
 DELETE /v1/documents/{id} → Remove a document
 """
 
+import asyncio
 import hashlib
 import shutil
 from pathlib import Path
@@ -151,12 +152,15 @@ async def process_document_background(doc_id: int, file_path: str):
             session.add(doc)
             session.commit()
 
-            chunk_count = await ingestion.ingest_file(
-                file_path=file_path,
-                doc_id=str(doc_id),
-                source=doc.original_filename,
-                corpus=doc.corpus,
-                required_permissions=doc.required_permissions,
+            chunk_count = await asyncio.wait_for(
+                ingestion.ingest_file(
+                    file_path=file_path,
+                    doc_id=str(doc_id),
+                    source=doc.original_filename,
+                    corpus=doc.corpus,
+                    required_permissions=doc.required_permissions,
+                ),
+                timeout=300,  # 5-minute timeout — handles large documents
             )
 
             from datetime import datetime
@@ -172,9 +176,15 @@ async def process_document_background(doc_id: int, file_path: str):
                 chunks=chunk_count,
             )
 
+        except asyncio.TimeoutError:
+            doc.status = "error"
+            doc.error_message = "Processing timed out (>5 min). Try a smaller file."
+            session.add(doc)
+            session.commit()
+            logger.error("⏱️ Ingestion timed out", doc_id=doc_id)
         except Exception as e:
             doc.status = "error"
-            doc.error_message = str(e)
+            doc.error_message = str(e)[:500]
             session.add(doc)
             session.commit()
             logger.error("💥 Ingestion failed", doc_id=doc_id, error=str(e))

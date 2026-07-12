@@ -1,359 +1,339 @@
-# 🤡 F.A.L.T.U
-
-> **F**antastically **A**ccurate **L**anguage & **T**hinking **U**nit
->
-> *An AI chatbot that's definitely NOT useless (despite the name).*
-> Upload your docs, ask questions, get cited answers — free, fast, and funny.
-
-[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template)
-
----
-
-## ✨ What It Does
-
-| Feature | Details |
-|---------|---------|
-| 📄 **Document Ingestion** | Upload PDF, Word, Markdown, TXT |
-| 🔍 **Hybrid Search** | Vector (ChromaDB) + BM25 keyword — best of both |
-| 🎯 **Reranking** | Cross-encoder re-scores results for accuracy |
-| 💬 **Streaming Chat** | Token-by-token streaming via Server-Sent Events |
-| 📚 **Citations** | Every answer links to source documents |
-| 🔒 **Auth** | JWT login · admin creates accounts (invite-only) |
-| 🛡️ **Guardrails** | Prompt injection detection + PII redaction |
-| 📊 **Monitoring** | Prometheus metrics + pre-built Grafana dashboard |
-| 🕓 **Chat History** | Restore previous sessions from sidebar |
-
----
-
-## 🏗️ Architecture
-
-```mermaid
-graph TB
-    User(["👤 User (Browser)"]) --> FE["🖥️ Streamlit Frontend\n(Railway)"]
-    FE --> BE["⚡ FastAPI Backend\n(Railway)"]
-
-    BE --> Groq["🚀 Groq API\n(Free LLM — external)"]
-    BE --> Embed["🔢 sentence-transformers\n(CPU, in-process)"]
-    BE --> Chroma["🗄️ ChromaDB\n(Railway Volume)"]
-    BE --> PG["🐘 PostgreSQL\n(Railway Managed)"]
-
-    subgraph "Railway Services"
-        FE
-        BE
-        Chroma
-        PG
-    end
-
-    subgraph "Free External APIs"
-        Groq
-    end
-
-    Admin(["👑 Admin"]) --> FE
-```
-
----
-
-## 💰 Cost Breakdown
-
-| Component | Service | Cost |
-|-----------|---------|------|
-| Frontend | Railway free tier | **$0** |
-| Backend | Railway free tier | **$0** |
-| PostgreSQL | Railway free tier | **$0** |
-| ChromaDB | Railway volume | **$0** |
-| LLM (LLaMA 3.1 8B) | Groq free tier (14,400 req/day) | **$0** |
-| Embeddings | sentence-transformers (runs in backend) | **$0** |
-| **Total** | | **$0/month** |
-
----
-
-## 🚀 Deploy to Railway (5 Steps)
-
-### Prerequisites
-- A [GitHub](https://github.com) account (free)
-- A [Railway](https://railway.app) account (free)
-- A [Groq](https://console.groq.com) API key (free, no credit card)
-
----
-
-### Step 1 — Get Your Free Groq API Key
-
-1. Go to [console.groq.com](https://console.groq.com)
-2. Sign up (free, no credit card)
-3. Go to **API Keys** → **Create API Key**
-4. Copy the key (starts with `gsk_...`)
-
----
-
-### Step 2 — Fork This Repository
-
-Click **Fork** at the top of this GitHub page → your own copy at `github.com/YOUR_NAME/rag-chatbot`
-
----
-
-### Step 3 — Create a Railway Project
-
-1. Go to [railway.app](https://railway.app) → **New Project**
-2. Select **Deploy from GitHub repo** → authorize Railway → choose your fork
-3. Railway will detect the project structure
-
----
-
-### Step 4 — Add PostgreSQL
-
-In your Railway project:
-1. Click **+ New** → **Database** → **Add PostgreSQL**
-2. Railway automatically injects `DATABASE_URL` into all services — **no action needed**
-
----
-
-### Step 5 — Set Environment Variables
-
-In Railway dashboard → your **backend** service → **Variables** tab, add:
-
-```bash
-# Required
-GROQ_API_KEY=gsk_your_actual_key_here
-JWT_SECRET_KEY=run_this_to_generate: python -c "import secrets; print(secrets.token_hex(32))"
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=YourStrongPassword123!
-ADMIN_EMAIL=you@example.com
-
-# Optional (good defaults already set)
-GROQ_MODEL=llama-3.1-8b-instant
-ENABLE_SEMANTIC_CACHE=true
-ENABLE_RERANKING=true
-```
-
-For the **frontend** service, add:
-```bash
-BACKEND_URL=https://your-backend-url.railway.app
-```
-> 💡 Find your backend URL in Railway → backend service → **Settings** → **Domains**
-
----
-
-### ✅ Done!
-
-Railway builds and deploys both services. Visit your **frontend URL** from Railway dashboard.
-
-**First login:** use the `ADMIN_USERNAME` / `ADMIN_PASSWORD` you set above.
-
----
-
-## 🖥️ Local Development
-
-### Prerequisites
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed
-- A Groq API key
-
-### Setup
-
-```bash
-# 1. Clone the repo
-git clone https://github.com/YOUR_NAME/rag-chatbot.git
-cd rag-chatbot
-
-# 2. Create .env from template
-cp .env.example .env
-
-# 3. Edit .env — add your Groq API key and change passwords
-#    GROQ_API_KEY=gsk_...
-#    ADMIN_PASSWORD=YourPassword
-#    JWT_SECRET_KEY=<generate with: python -c "import secrets; print(secrets.token_hex(32))">
-
-# 4. Start everything
-docker compose up --build
-
-# 5. Open your browser
-# Chat UI:      http://localhost:8501
-# API docs:     http://localhost:8000/docs
-# Grafana:      http://localhost:3000  (admin / value of GRAFANA_PASSWORD in .env)
-# Prometheus:   http://localhost:9090
-```
-
-> ⏳ **First startup takes 3–5 minutes** — Docker downloads and builds the ML models into the image. Subsequent starts are instant.
-
----
-
-## 📖 Usage Guide
-
-### Uploading Documents
-
-1. Log in as admin
-2. Click **📄 Upload Documents** in the sidebar
-3. Drag and drop a PDF, Word, Markdown, or TXT file
-4. Select which **Knowledge Base** (corpus) to add it to
-5. Click **Upload & Ingest** — processing happens in the background
-6. Status updates from `⏳ pending` → `🔄 processing` → `✅ ready`
-
-### Chatting
-
-1. Select a **Knowledge Base** in the sidebar
-2. Type your question in the chat input
-3. The bot streams an answer with source citations
-4. Click 👍 or 👎 to give feedback
-
-### Managing Users
-
-Admin dashboard → **Create New User**:
-- Set a **username**, **email**, and **password**
-- Set **permissions** (which knowledge bases they can access)
-- Only admins can create accounts — regular users cannot self-register
-
----
-
-## 🔧 Configuration Reference
-
-All settings are environment variables. Set them in `.env` (local) or Railway dashboard (production).
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GROQ_API_KEY` | *(required)* | Your Groq API key from console.groq.com |
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model to use |
-| `JWT_SECRET_KEY` | *(required)* | Random 32-char secret for JWT signing |
-| `ADMIN_USERNAME` | `admin` | Admin account username |
-| `ADMIN_PASSWORD` | *(required)* | Admin account password |
-| `ADMIN_EMAIL` | `admin@example.com` | Admin account email |
-| `DATABASE_URL` | *(auto-injected by Railway)* | PostgreSQL connection string |
-| `RETRIEVAL_TOP_K` | `20` | Chunks retrieved before reranking |
-| `RERANK_TOP_K` | `5` | Chunks sent to LLM after reranking |
-| `CHUNK_SIZE` | `400` | Target tokens per chunk |
-| `CHUNK_OVERLAP` | `60` | Overlap tokens between chunks |
-| `ENABLE_SEMANTIC_CACHE` | `true` | Cache similar queries |
-| `ENABLE_RERANKING` | `true` | Cross-encoder reranking |
-| `ENABLE_PII_REDACTION` | `true` | Redact PII from outputs |
-| `RATE_LIMIT_PER_MINUTE` | `20` | Max queries per user per minute |
-| `LOG_LEVEL` | `INFO` | Logging verbosity |
-
----
-
-## 📊 Monitoring (Local Only)
-
-The local Docker Compose stack includes Prometheus + Grafana.
-
-| Service | URL | Credentials |
-|---------|-----|------------|
-| Grafana | http://localhost:3000 | admin / (GRAFANA_PASSWORD in .env) |
-| Prometheus | http://localhost:9090 | none |
-
-The **RAG Chatbot Dashboard** is auto-provisioned with panels for:
-- Request rate (req/s)
-- P50/P95/P99 latency
-- Error rate
-- Requests by endpoint and status code
-
-> 💡 Railway has built-in metrics — the Prometheus/Grafana stack is for local monitoring only.
-
----
-
-## 🛠️ Troubleshooting
-
-### ❌ "Cannot connect to backend" on login
-- **Local**: run `docker compose up` and wait for the health check to pass (~60s)
-- **Railway**: check backend service logs in Railway dashboard for startup errors
-
-### ❌ "Groq API unavailable" in health check
-- Check that `GROQ_API_KEY` is set correctly (starts with `gsk_`)
-- Verify at [console.groq.com](https://console.groq.com) that the key is active
-
-### ❌ Empty answers / "I don't have enough information"
-- No documents have been ingested yet — upload a document first
-- Make sure you're searching the right **Knowledge Base** (corpus)
-- Document may still be processing (`⏳ pending`) — wait 30s and retry
-
-### ❌ Slow first response (local)
-- First response triggers model loading (~10s for sentence-transformers)
-- Subsequent responses are fast (model is cached in memory)
-- On Railway this is handled at build time — cold starts are fast
-
-### ❌ "413 File too large"
-- Maximum file size is **50MB**
-- Split large PDFs using a PDF editor before uploading
-
-### ❌ Railway deployment fails
-- Check that `GROQ_API_KEY` and `JWT_SECRET_KEY` are set in Railway Variables
-- Check that PostgreSQL plugin is added to the project
-- Review build logs in Railway dashboard for dependency errors
-
-### 🔄 Resetting the database (local)
-```bash
-docker compose down -v   # Removes all volumes including database
-docker compose up --build
-```
-
----
-
-## 🏛️ Project Structure
-
-```
+# F.A.L.T.U - RAG Chatbot
+
+F.A.L.T.U stands for **Fantastically Accurate Language & Thinking Unit**. It is a document-based Retrieval-Augmented Generation (RAG) chatbot. Users upload documents, ask questions, and receive AI-generated answers grounded in those documents with source citations.
+
+The project is designed as a full-stack, deployable chatbot system with authentication, document ingestion, hybrid retrieval, streaming responses, admin controls, and monitoring.
+
+## What This Project Does
+
+- Lets users upload PDF, DOCX, Markdown, and TXT documents.
+- Extracts text from uploaded files.
+- Splits document text into overlapping chunks.
+- Creates embeddings with `sentence-transformers/all-MiniLM-L6-v2`.
+- Stores document vectors in ChromaDB.
+- Retrieves relevant chunks using hybrid search:
+  - vector similarity search through ChromaDB
+  - keyword search through BM25
+- Optionally reranks retrieved chunks with a cross-encoder.
+- Sends the selected context to a Groq-hosted LLM.
+- Streams the answer back to the frontend using Server-Sent Events.
+- Shows citations for the source chunks used in the answer.
+- Saves chat sessions, messages, document metadata, users, and feedback.
+- Provides admin-only user management and usage statistics.
+
+## Main Use Case
+
+This application is useful when a team wants a private chatbot over its own documents, such as:
+
+- company policies
+- engineering documentation
+- HR material
+- finance documents
+- sales enablement material
+- internal knowledge base files
+
+Instead of answering from model memory alone, the chatbot searches uploaded documents first and answers from the retrieved context.
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Frontend | Streamlit |
+| Backend | FastAPI |
+| LLM | Groq API |
+| Embeddings | sentence-transformers |
+| Vector database | ChromaDB |
+| Keyword search | rank-bm25 |
+| Relational database | SQLite locally, PostgreSQL when `DATABASE_URL` is set |
+| Auth | JWT + bcrypt |
+| Monitoring | Prometheus + Grafana |
+| Deployment | Docker Compose, Railway configs |
+
+## Project Structure
+
+```text
 rag-chatbot/
-├── backend/                    # FastAPI backend
-│   ├── main.py                 # App entry point, DB init, scheduler
-│   ├── config.py               # Settings (from env vars)
-│   ├── models.py               # SQLModel database models
-│   ├── auth.py                 # JWT authentication
-│   ├── routers/
-│   │   ├── chat.py             # POST /v1/chat (streaming SSE)
-│   │   ├── ingest.py           # POST /v1/ingest (document upload)
-│   │   ├── health.py           # GET /health
-│   │   ├── admin.py            # Admin user management
-│   │   └── auth_router.py      # POST /auth/login
-│   ├── services/
-│   │   ├── llm_client.py       # Groq API client (streaming)
-│   │   ├── embedder.py         # sentence-transformers embedder
-│   │   ├── retriever.py        # Hybrid ChromaDB + BM25 retrieval
-│   │   ├── reranker.py         # Cross-encoder reranking
-│   │   ├── ingestion.py        # Document parse → chunk → embed → index
-│   │   ├── cache.py            # Semantic cache (in-memory TTL)
-│   │   └── guardrail.py        # Input/output safety filters
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── railway.toml
-│
-├── frontend/                   # Streamlit chat UI
-│   ├── app.py                  # Full UI: login, chat, upload, admin
-│   ├── Dockerfile
-│   ├── requirements.txt
-│   └── railway.toml
-│
-├── monitoring/                 # Local Prometheus + Grafana
-│   ├── prometheus.yml
-│   └── grafana/
-│       ├── provisioning/       # Auto-config datasources + dashboards
-│       └── dashboards/         # Pre-built RAG metrics dashboard
-│
-├── nginx/
-│   └── nginx.conf              # Reverse proxy (local only)
-│
-├── docker-compose.yml          # Local development stack
-├── .env.example                # Environment variable template
-├── .gitignore
-└── README.md
+|-- backend/
+|   |-- main.py                  # FastAPI app setup, startup tasks, router registration
+|   |-- config.py                # Environment-based settings
+|   |-- auth.py                  # JWT auth, password hashing, current-user dependencies
+|   |-- models.py                # SQLModel database models
+|   |-- routers/
+|   |   |-- auth_router.py       # Login, logout, current user
+|   |   |-- chat.py              # Streaming RAG chat, feedback, chat sessions
+|   |   |-- ingest.py            # Document upload/list/delete
+|   |   |-- admin.py             # Admin user management and stats
+|   |   `-- health.py            # Health checks
+|   |-- services/
+|   |   |-- ingestion.py         # Parse, chunk, embed, index documents
+|   |   |-- retriever.py         # ChromaDB + BM25 hybrid retrieval
+|   |   |-- reranker.py          # Cross-encoder reranking
+|   |   |-- llm_client.py        # Groq streaming client
+|   |   |-- embedder.py          # sentence-transformers embedder
+|   |   |-- cache.py             # Semantic response cache
+|   |   `-- guardrail.py         # Prompt-injection checks and PII redaction
+|   `-- requirements.txt
+|-- frontend/
+|   |-- app.py                   # Streamlit UI
+|   `-- requirements.txt
+|-- monitoring/
+|   |-- prometheus.yml
+|   `-- grafana/
+|-- nginx/
+|   `-- nginx.conf
+|-- docker-compose.yml
+|-- Dockerfile.backend
+|-- Dockerfile.frontend
+|-- deployment_guide.md
+`-- PROJECT_BRIEF.md
 ```
 
----
+## Architecture
 
-## 🤝 Contributing
+```text
+User Browser
+    |
+    v
+Streamlit Frontend
+    |
+    v
+FastAPI Backend
+    |
+    +--> SQL database for users, documents, chat history, feedback
+    |
+    +--> ChromaDB for vector search
+    |
+    +--> sentence-transformers for embeddings
+    |
+    +--> BM25 for keyword retrieval
+    |
+    +--> Groq API for LLM responses
+```
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feat/my-feature`
-3. Commit your changes: `git commit -m 'feat: add my feature'`
-4. Push to the branch: `git push origin feat/my-feature`
-5. Open a Pull Request
+## Request Flow
 
----
+### Document Upload Flow
 
-## 📄 License
+1. User logs in.
+2. User uploads a PDF, DOCX, Markdown, or TXT file.
+3. Backend validates file type and size.
+4. File is saved to disk.
+5. Metadata is stored in the SQL database.
+6. Background ingestion starts.
+7. Text is extracted.
+8. Text is chunked.
+9. Chunks are embedded.
+10. Chunks are indexed in ChromaDB.
+11. Document status changes from `pending` to `processing` to `ready`.
 
-MIT License — see [LICENSE](../LICENSE) for details.
+### Chat Flow
 
----
+1. User sends a question from the Streamlit UI.
+2. Backend validates JWT authentication.
+3. Guardrails check the input.
+4. Backend checks whether the user can access the selected corpus.
+5. Semantic cache is checked.
+6. Relevant chunks are retrieved from ChromaDB and BM25.
+7. Results are optionally reranked.
+8. A context prompt is built from the selected chunks.
+9. Groq streams the LLM answer.
+10. The answer is returned to the UI token by token.
+11. Sources and metadata are sent after completion.
+12. Chat messages are stored in the database.
 
-<div align="center">
-  Built with ❤️ and questionable naming decisions using FastAPI · Streamlit · Groq · ChromaDB · Railway
-  <br/><br/>
-  <strong>F.A.L.T.U</strong> — Fantastically Accurate Language & Thinking Unit
-  <br/>
-  <em>(Yes, we know what "faltu" means. That's the joke.)</em>
-</div>
+## Key Features
+
+### Document Ingestion
+
+Supported formats:
+
+- PDF
+- DOCX
+- Markdown
+- TXT
+
+Uploaded documents are deduplicated using an MD5 content hash.
+
+### Retrieval
+
+The retriever combines two search methods:
+
+- **Dense search:** semantic similarity over embeddings in ChromaDB.
+- **Sparse search:** keyword matching with BM25.
+
+The two result sets are merged with Reciprocal Rank Fusion.
+
+### LLM
+
+The backend uses Groq through `backend/services/llm_client.py`. The default model is:
+
+```text
+llama-3.1-8b-instant
+```
+
+Some code comments still mention Ollama because the project previously used that interface. The runtime client is Groq, and `OllamaClient` is kept as a compatibility alias.
+
+### Authentication
+
+The app uses:
+
+- bcrypt for password hashing
+- JWT bearer tokens for authentication
+- admin-only routes for user management
+- per-user corpus permissions
+
+The first admin user is created automatically on backend startup using environment variables.
+
+### Permissions
+
+Users have comma-separated corpus permissions, for example:
+
+```text
+public,engineering,hr
+```
+
+When chatting, the user must have access to the selected corpus.
+
+### Monitoring
+
+The local Docker Compose stack includes:
+
+- Prometheus at `http://localhost:9090`
+- Grafana at `http://localhost:3000`
+- backend metrics at `/metrics`
+
+## Environment Variables
+
+Create `.env` from `.env.example` and set the required values.
+
+Important variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `GROQ_API_KEY` | Required Groq API key |
+| `GROQ_MODEL` | Groq model name |
+| `JWT_SECRET_KEY` | Secret used to sign JWT tokens |
+| `ADMIN_USERNAME` | Initial admin username |
+| `ADMIN_PASSWORD` | Initial admin password |
+| `ADMIN_EMAIL` | Initial admin email |
+| `DATABASE_URL` | PostgreSQL URL; leave empty for local SQLite fallback |
+| `DATA_DIR` | Backend data directory |
+| `CHROMA_DATA_DIR` | ChromaDB persistence directory |
+| `RETRIEVAL_TOP_K` | Number of chunks retrieved before reranking |
+| `RERANK_TOP_K` | Number of chunks sent to the LLM after reranking |
+| `ENABLE_SEMANTIC_CACHE` | Enables similar-query response caching |
+| `ENABLE_RERANKING` | Enables cross-encoder reranking |
+| `ENABLE_PII_REDACTION` | Enables output PII redaction |
+
+## Local Development With Docker
+
+Prerequisites:
+
+- Docker Desktop
+- Groq API key
+
+Steps:
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set:
+
+```text
+GROQ_API_KEY=your_key_here
+JWT_SECRET_KEY=your_random_secret
+ADMIN_PASSWORD=your_admin_password
+```
+
+Start the stack:
+
+```bash
+docker compose up --build
+```
+
+Open:
+
+| Service | URL |
+| --- | --- |
+| Frontend | `http://localhost:8501` |
+| Backend API docs | `http://localhost:8000/docs` |
+| Backend health | `http://localhost:8000/health` |
+| Prometheus | `http://localhost:9090` |
+| Grafana | `http://localhost:3000` |
+
+## Running Without Docker
+
+Backend:
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Frontend:
+
+```bash
+cd frontend
+pip install -r requirements.txt
+streamlit run app.py --server.port 8501
+```
+
+Set `BACKEND_URL` for the frontend if the backend is not reachable at the default URL.
+
+## API Overview
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/` | Root API info |
+| `GET` | `/health` | Service health check |
+| `POST` | `/auth/login` | Login and get JWT token |
+| `POST` | `/auth/logout` | Client-side logout helper |
+| `GET` | `/auth/me` | Current user profile |
+| `POST` | `/v1/ingest` | Upload a document |
+| `GET` | `/v1/documents` | List documents |
+| `DELETE` | `/v1/documents/{doc_id}` | Delete a document |
+| `POST` | `/v1/chat` | Streaming RAG chat endpoint |
+| `POST` | `/v1/feedback` | Submit answer feedback |
+| `GET` | `/v1/sessions` | List chat sessions |
+| `GET` | `/v1/sessions/{session_id}/messages` | Get messages in a session |
+| `GET` | `/admin/users` | Admin: list users |
+| `POST` | `/admin/users` | Admin: create user |
+| `PATCH` | `/admin/users/{user_id}` | Admin: update user |
+| `DELETE` | `/admin/users/{user_id}` | Admin: delete user |
+| `GET` | `/admin/stats` | Admin: usage statistics |
+| `GET` | `/metrics` | Prometheus metrics |
+
+## Deployment
+
+The repository includes Railway configuration files:
+
+- `backend/railway.toml`
+- `frontend/railway.toml`
+
+For Railway deployment:
+
+1. Deploy backend and frontend as separate services.
+2. Add PostgreSQL to the Railway project.
+3. Set backend environment variables:
+   - `GROQ_API_KEY`
+   - `JWT_SECRET_KEY`
+   - `ADMIN_USERNAME`
+   - `ADMIN_PASSWORD`
+   - `ADMIN_EMAIL`
+4. Set frontend environment variable:
+   - `BACKEND_URL=https://your-backend-service-url`
+5. Add a persistent volume for backend data if using ChromaDB persistence.
+
+See `deployment_guide.md` for more deployment details.
+
+## Known Notes
+
+- The codebase contains some older comments that refer to Ollama. The active LLM implementation uses Groq.
+- The FastAPI OAuth docs token URL in `backend/auth.py` currently points to `/api/auth/login`, while the registered login route is `/auth/login`.
+- Some older files contain encoding artifacts in comments. The application logic is still readable, but documentation has been rewritten in clean ASCII Markdown.
+
+## License
+
+MIT
